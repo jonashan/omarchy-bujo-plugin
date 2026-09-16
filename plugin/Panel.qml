@@ -228,6 +228,13 @@ Panel {
       blocked: root.settingsOpen && settingsView.editing
 
       onMoveRequested: function (dx, dy) { if (!root.settingsOpen && dy !== 0) root.moveCursor(dy) }
+      // The kit's "activate the row under the cursor", which is Enter and
+      // Space. Ticking the box is the only thing activating a todo can mean.
+      onActivateRequested: if (!root.settingsOpen) root.act("done")
+      // x is the kit's own key — it is matched before onTextKey is reached and
+      // arrives here instead. Which suits: `- [x]` is what done looks like in
+      // the file, so "delete the row under the cursor" is "tick it".
+      onDeleteRequested: if (!root.settingsOpen) root.act("done")
       onCloseRequested: if (root.settingsOpen) root.toggleSettings(); else root.close()
       // Tab is how the bar switches panels, which is the wrong move while a
       // form is up: hand it the first field instead.
@@ -238,8 +245,7 @@ Panel {
       onTextKey: function (t) {
         if (t === "s") { root.toggleSettings(); return }
         if (root.settingsOpen) return
-        if (t === "c") root.act("done")
-        else if (t === "d") root.act("drop")
+        if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
         else if (t === "a") root.actInteractive("add-interactive")
         else if (t === "n") root.actInteractive("note-interactive")
@@ -396,7 +402,9 @@ Panel {
           font.pixelSize: Style.font.caption
         }
 
-        Row {
+        // Flow, not Row: seven verbs already reach the right edge at the
+        // default font, and a Row would clip the last one rather than wrap.
+        Flow {
           width: parent.width
           spacing: Style.space(11)
           visible: !root.settingsOpen
@@ -405,7 +413,7 @@ Panel {
             model: [
               { key: "j/k", what: "move" },
               { key: "m", what: "migrate" },
-              { key: "c", what: "done" },
+              { key: "x/⏎", what: "done" },
               { key: "d", what: "drop" },
               { key: "a", what: "add" },
               { key: "n", what: "note" },

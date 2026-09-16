@@ -95,7 +95,7 @@ bujo config pick vault                   # the desktop folder chooser, then save
 bujo config pick template_file           # ...and stored vault-relative
 ```
 
-All three actions toggle: `c` on a done task reopens it (and the ✅ stamp goes
+All three actions toggle: `x` on a done task reopens it (and the ✅ stamp goes
 with it), `d` on a dropped one revives it, and `m` on a migrated one brings it
 back — removing the copy at the target, unless that copy has already been
 completed or edited, in which case it is left alone and you are told.
@@ -117,8 +117,8 @@ The bar widget shows today's open count, and the dangling count after it in
 the `urgent` role — the one colour bujo introduces, and only when there is
 something to decide about. Left click opens the panel, right click captures.
 
-In the panel: `j/k` move, `c` done, `d` drop, `m` migrate, `a` add, `n` note,
-`s` settings, `Esc` closes. It reads on open and polls once a second while
+In the panel: `j/k` move, `x` or `Enter` done, `d` drop, `m` migrate, `a` add,
+`n` note, `s` settings, `Esc` closes. It reads on open and polls once a second while
 visible, so a box ticked in Obsidian shows up here.
 
 The settings page — the cog, or `s` — edits the vault, the daily-note pattern,

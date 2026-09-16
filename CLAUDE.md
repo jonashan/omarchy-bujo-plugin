@@ -142,7 +142,10 @@ Nerd Font: glyph coverage varies by font version and a missing box would be a
 tofu mid-list, while a painted mark takes the palette colour.
 
 `PanelKeyCatcher` already supplies `j/k`, arrows, Enter and Escape; only
-single-letter verbs need handling in `onTextKey`. Verbs that summon their own
+single-letter verbs need handling in `onTextKey`. `x` is not one of them: the
+catcher matches it before `onTextKey` is reached and emits `deleteRequested`
+instead, so an `onTextKey` branch for it never fires and never says why. Enter
+and Space arrive as `activateRequested`. Verbs that summon their own
 Quickshell prompt must `root.close()` first rather than compete for keyboard
 focus.
 
