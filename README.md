@@ -37,6 +37,8 @@ until you make a decision about it.
 ## Install
 
 ```bash
+git clone https://github.com/jonashan/omarchy-bujo-plugin.git
+cd omarchy-bujo-plugin
 ./install
 ```
 
