@@ -30,7 +30,19 @@ until you make a decision about it.
 ## Install
 
 ```bash
-ln -s ~/Work/bujo/bujo ~/.local/bin/bujo
+./install
+```
+
+Symlinks the CLI onto `PATH` and copies the plugin into
+`~/.config/omarchy/plugins/jsc.bujo`. The QML is copied rather than linked
+because `omarchy-plugin-validate` refuses symlinks inside a plugin folder, so
+re-run `./install` after editing the plugin, then `omarchy-restart-shell`.
+(Not `omarchy-refresh-shell` — that resets `shell.json` to Omarchy defaults.)
+
+Then add the widget to `bar.layout.<section>` in `~/.config/omarchy/shell.json`:
+
+```json
+{ "id": "jsc.bujo" }
 ```
 
 First run writes `~/.config/bujo/config.toml`. The two settings that matter:
@@ -68,19 +80,35 @@ Palette entry — `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
 "todo": {"icon":"","label":"Todo","aliases":["task","t"],"action":"bujo add-interactive"}
 ```
 
-Bar counts — `~/.config/omarchy/shell.json`, under `bar.layout.<section>`:
+The bar widget shows today's open count, and the dangling count after it in
+the `urgent` role — the one colour bujo introduces, and only when there is
+something to decide about. Left click opens the panel, right click captures.
+
+In the panel: `j/k` move, `c` done, `d` drop, `m` migrate, `a` add, `Enter`
+opens the note in Obsidian, `Esc` closes. It reads on open and polls once a
+second while visible, so a box ticked in Obsidian shows up here.
+
+Statuses are drawn, not set in a font — a shared box plus one mark inside it,
+so the column reads as one family and there is no glyph roulette across Nerd
+Font versions.
+
+If you would rather not run the QML plugin, `bujo bar` still emits
+Waybar-style JSON for a plain command module:
 
 ```json
-{ "id": "bujo", "type": "command", "exec": "bujo bar", "interval": 30, "tooltip": "Todos" }
+{ "id": "bujo", "type": "command", "exec": "bujo bar", "interval": 30 }
 ```
 
 ## Built / not built
 
 - **P0 · CLI** — done. Section contract, path patterns, verify-before-write.
 - **P1 · bar counts** — done, `bujo bar`.
-- **P2 · panel** — not started. Quickshell plugin, `j/k` + `m/c/d`, reads on
-  open and polls while visible.
+- **P2 · panel** — done. Quickshell bar widget plus keyboard-driven panel.
 - **P3 · quick notes** — `- ` bullets into `## Log`, same plumbing.
+
+Known ceiling: `m` opens a free-text prompt rather than the fixed rows
+(tomorrow / next week / pick a date) the design calls for. Upgrade when the
+common cases turn out to be worth a keystroke each.
 
 ## Tests
 

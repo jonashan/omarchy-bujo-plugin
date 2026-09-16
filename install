@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Install bujo: the CLI on PATH, the plugin into omarchy.
+# The plugin dir must hold real files — omarchy-plugin-validate refuses
+# symlinks inside a plugin folder — so the QML is copied, not linked.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+dest="$HOME/.config/omarchy/plugins/jsc.bujo"
+
+mkdir -p "$HOME/.local/bin" "$dest"
+ln -sfn "$here/bujo" "$HOME/.local/bin/bujo"
+cp "$here"/plugin/*.qml "$here"/plugin/manifest.json "$dest/"
+
+omarchy-plugin-validate "$dest"
+omarchy-plugin-enable jsc.bujo 2>/dev/null || true
+echo "installed — add {\"id\": \"jsc.bujo\"} to bar.layout in ~/.config/omarchy/shell.json"

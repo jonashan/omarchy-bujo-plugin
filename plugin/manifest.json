@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "jsc.bujo",
+  "name": "Bujo",
+  "version": "0.1.0",
+  "author": "Jonas",
+  "license": "MIT",
+  "description": "Bullet-journal todos from your Obsidian daily notes, in the bar.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Bujo",
+    "description": "Today's todos and everything still dangling, keyboard-first.",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaults": {
+      "command": "bujo",
+      "refreshSeconds": 30
+    },
+    "schema": [
+      {
+        "key": "command",
+        "type": "string",
+        "label": "bujo executable",
+        "defaultValue": "bujo"
+      },
+      {
+        "key": "refreshSeconds",
+        "type": "integer",
+        "label": "Refresh interval while closed (seconds)",
+        "defaultValue": 30
+      }
+    ]
+  }
+}

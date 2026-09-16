@@ -435,6 +435,30 @@ def cmd_move(cfg, args):
     print("%s → %s" % (text, fmt_date("ddd D MMM", target)))
 
 
+def cmd_move_interactive(cfg, args):
+    """Reuse the capture prompt rather than build a picker inside the panel.
+    ponytail: free-text prompt; fixed rows (tomorrow/next week/pick) if the
+    common cases turn out to be worth a keystroke each."""
+    when = run_or_none(["omarchy-menu-input", "Move to"])
+    if not when:
+        return
+    cmd_move(cfg, Args(ref=args.ref, when=when.strip()))
+
+
+def cmd_open(cfg, args):
+    """Hand the whole note to Obsidian — bujo only ever renders one section."""
+    import urllib.parse
+    rel = args.ref.rsplit(":", 2)[0]
+    path = cfg["vault"] / rel
+    subprocess.Popen(["xdg-open", "obsidian://open?path=" + urllib.parse.quote(str(path))],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class Args:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
 def cmd_list(cfg, args):
     today = date.today()
     if args.dangling:
@@ -512,6 +536,14 @@ def main(argv=None):
     mv.add_argument("ref")
     mv.add_argument("when")
     mv.set_defaults(fn=cmd_move)
+
+    mvi = sub.add_parser("move-interactive", help="prompt for a day, then migrate")
+    mvi.add_argument("ref")
+    mvi.set_defaults(fn=cmd_move_interactive)
+
+    op = sub.add_parser("open", help="open the note holding a task in Obsidian")
+    op.add_argument("ref")
+    op.set_defaults(fn=cmd_open)
 
     sub.add_parser("bar", help="waybar-style JSON for the omarchy bar").set_defaults(fn=cmd_bar)
 
