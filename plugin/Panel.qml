@@ -24,7 +24,9 @@ Panel {
 
   readonly property var todayRows: rows.filter(function (r) { return r.age === 0 })
   readonly property var lateRows: rows.filter(function (r) { return r.age > 0 })
-  readonly property var actionable: todayRows.concat(lateRows)
+  // One plain list on a past day: every verb still acts on the cursor row, so
+  // the cursor model does not change shape just because the date did.
+  readonly property var actionable: dayMode ? dayTodos : todayRows.concat(lateRows)
   readonly property int openToday: todayRows.filter(function (r) { return r.status === " " }).length
 
   property int cursor: 0
@@ -34,14 +36,183 @@ Panel {
 
   property bool settingsOpen: false
 
+  // ---- which day the panel is pointed at. 0 is today and keeps the
+  //      TODAY/DANGLING split; anything earlier is one plain day, because
+  //      "dangling" is a relationship to today that a past day has not got.
+  //      Clamped at 0: this navigates history, not the future.
+  property int dayOffset: 0
+  property bool calendarOpen: false
+
+  readonly property bool dayMode: dayOffset < 0
+  readonly property date viewDay: {
+    var d = new Date(root.today)
+    d.setDate(d.getDate() + root.dayOffset)
+    return d
+  }
+
+  function iso(d) { return Qt.formatDate(d, "yyyy-MM-dd") }
+
+  function stepDay(delta) {
+    var next = Math.min(0, root.dayOffset + delta)
+    if (next === root.dayOffset) return
+    root.dayOffset = next
+    root.cursor = 0
+    root.reloadView()
+  }
+
+  function goToday() {
+    root.dayOffset = 0
+    root.cursor = 0
+    root.reloadView()
+  }
+
   // A live rescan can shorten the list under the cursor between keystrokes.
   onActionableChanged: if (cursor >= actionable.length) cursor = Math.max(0, actionable.length - 1)
-  onOpenedChanged: if (opened) { today = new Date(); cursor = 0; if (hostWidget) hostWidget.refresh() }
+  onOpenedChanged: if (opened) {
+    today = new Date()
+    cursor = 0
+    dayOffset = 0
+    calendarOpen = false
+    if (hostWidget) hostWidget.refresh()
+    reloadView()
+  }
 
   function toggleSettings() {
     settingsOpen = !settingsOpen
     if (settingsOpen) loadConfig()
     else keyCatcher.forceActiveFocus()
+  }
+
+  // ---- the day's own data. The bar widget owns today's rows because the
+  //      counts must be right whether or not anyone opened the panel; a past
+  //      day is nobody's business but this panel's, so it loads its own.
+
+  property var dayTodos: []
+  property var dayNotes: []
+  property var monthDays: []
+
+  readonly property var todayRowsWithLog: rows   // named for the reader's sake
+
+  function reloadView() {
+    if (!opened || settingsOpen) return
+    if (calendarOpen) { loadMonth(); return }
+    if (!dayLoad.running && dayMode) {
+      dayLoad.command = [root.exe, "list", "--day", iso(viewDay), "--json"]
+      dayLoad.running = true
+    }
+    if (!logLoad.running) {
+      logLoad.command = [root.exe, "log", "--day", iso(viewDay), "--json"]
+      logLoad.running = true
+    }
+  }
+
+  Process {
+    id: dayLoad
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: dayOut
+      waitForEnd: true
+      onStreamFinished: root.dayTodos = root.parseList(dayOut.text)
+    }
+  }
+
+  Process {
+    id: logLoad
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: logOut
+      waitForEnd: true
+      onStreamFinished: root.dayNotes = root.parseList(logOut.text)
+    }
+  }
+
+  // ---- the calendar. A month of counts in one call, because the grid cannot
+  //      afford a process per cell.
+
+  property date calMonth: new Date()
+  property int calCursor: 1          // day of month under the cursor
+
+  function loadMonth() {
+    if (monthLoad.running) return
+    monthLoad.command = [root.exe, "days", Qt.formatDate(root.calMonth, "yyyy-MM"), "--json"]
+    monthLoad.running = true
+  }
+
+  function toggleCalendar() {
+    calendarOpen = !calendarOpen
+    if (!calendarOpen) { keyCatcher.forceActiveFocus(); reloadView(); return }
+    calMonth = new Date(root.viewDay)
+    calCursor = root.viewDay.getDate()
+    monthDays = []
+    loadMonth()
+  }
+
+  function stepMonth(delta) {
+    var d = new Date(root.calMonth)
+    d.setDate(1)
+    d.setMonth(d.getMonth() + delta)
+    root.calMonth = d
+    root.calCursor = Math.min(root.calCursor, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())
+    root.monthDays = []
+    loadMonth()
+  }
+
+  function moveCalCursor(days) {
+    var d = new Date(root.calMonth.getFullYear(), root.calMonth.getMonth(), root.calCursor)
+    d.setDate(d.getDate() + days)
+    // Walking off the edge of the month turns the page rather than stopping.
+    if (d.getMonth() !== root.calMonth.getMonth() || d.getFullYear() !== root.calMonth.getFullYear()) {
+      var m = new Date(d)
+      m.setDate(1)
+      root.calMonth = m
+      root.monthDays = []
+      loadMonth()
+    }
+    root.calCursor = d.getDate()
+  }
+
+  // Enter on a cell leaves the calendar pointed at that day.
+  function openCalendarDay() {
+    var picked = new Date(root.calMonth.getFullYear(), root.calMonth.getMonth(), root.calCursor)
+    var start = new Date(root.today)
+    start.setHours(0, 0, 0, 0)
+    picked.setHours(0, 0, 0, 0)
+    root.dayOffset = Math.min(0, Math.round((picked - start) / 86400000))
+    root.cursor = 0
+    root.calendarOpen = false
+    keyCatcher.forceActiveFocus()
+    root.reloadView()
+  }
+
+  Process {
+    id: monthLoad
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: monthOut
+      waitForEnd: true
+      onStreamFinished: root.monthDays = root.parseList(monthOut.text)
+    }
+  }
+
+  function parseList(text) {
+    try {
+      var parsed = JSON.parse(String(text || "[]"))
+      return parsed instanceof Array ? parsed : []
+    } catch (e) {
+      return []
+    }
+  }
+
+  // A box ticked in Obsidian should show up here too, so the day view keeps
+  // the same one-second heartbeat the bar uses while the panel is open.
+  Timer {
+    interval: 1000
+    running: root.opened && !root.settingsOpen && !root.calendarOpen
+    repeat: true
+    onTriggered: root.reloadView()
   }
 
   // ---- settings. Three commands, no file: `bujo config get` fills the page,
@@ -205,6 +376,7 @@ Panel {
       var m = /→ \[\[([0-9-]+)\]\]/.exec(row.text)
       return m ? "→ " + Qt.formatDate(Date.fromLocaleDateString(Qt.locale(), m[1], "yyyy-MM-dd"), "d MMM") : ""
     }
+    if (root.dayMode) return ""
     return row.age > 0 ? row.age + "d" : ""
   }
 
@@ -227,15 +399,37 @@ Panel {
       // already a verb down in the list.
       blocked: root.settingsOpen && settingsView.editing
 
-      onMoveRequested: function (dx, dy) { if (!root.settingsOpen && dy !== 0) root.moveCursor(dy) }
+      // Two axes, and the kit already delivers both: dy walks the list, dx
+      // walks the days. dx was being thrown away until now.
+      onMoveRequested: function (dx, dy) {
+        if (root.settingsOpen) return
+        if (root.calendarOpen) {
+          if (dx !== 0) root.moveCalCursor(dx)
+          if (dy !== 0) root.moveCalCursor(dy * 7)
+          return
+        }
+        if (dy !== 0) root.moveCursor(dy)
+        else if (dx !== 0) root.stepDay(dx)
+      }
       // The kit's "activate the row under the cursor", which is Enter and
-      // Space. Ticking the box is the only thing activating a todo can mean.
-      onActivateRequested: if (!root.settingsOpen) root.act("done")
+      // Space. Ticking the box is the only thing activating a todo can mean —
+      // in the calendar the only thing it can mean is "open that day".
+      onActivateRequested: {
+        if (root.settingsOpen) return
+        if (root.calendarOpen) root.openCalendarDay()
+        else root.act("done")
+      }
       // x is the kit's own key — it is matched before onTextKey is reached and
       // arrives here instead. Which suits: `- [x]` is what done looks like in
       // the file, so "delete the row under the cursor" is "tick it".
-      onDeleteRequested: if (!root.settingsOpen) root.act("done")
-      onCloseRequested: if (root.settingsOpen) root.toggleSettings(); else root.close()
+      onDeleteRequested: if (!root.settingsOpen && !root.calendarOpen) root.act("done")
+      // Escape unwinds one level at a time rather than always closing.
+      onCloseRequested: {
+        if (root.settingsOpen) root.toggleSettings()
+        else if (root.calendarOpen) root.toggleCalendar()
+        else if (root.dayMode) root.goToday()
+        else root.close()
+      }
       // Tab is how the bar switches panels, which is the wrong move while a
       // form is up: hand it the first field instead.
       onTabRequested: function (direction) {
@@ -245,6 +439,13 @@ Panel {
       onTextKey: function (t) {
         if (t === "s") { root.toggleSettings(); return }
         if (root.settingsOpen) return
+        if (t === "c") { root.toggleCalendar(); return }
+        if (t === "t") { if (root.calendarOpen) root.toggleCalendar(); root.goToday(); return }
+        if (root.calendarOpen) {
+          if (t === "[") root.stepMonth(-1)
+          else if (t === "]") root.stepMonth(1)
+          return
+        }
         if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
         else if (t === "a") root.actInteractive("add-interactive")
@@ -265,11 +466,79 @@ Panel {
           Text {
             id: title
             anchors.verticalCenter: parent.verticalCenter
-            text: root.settingsOpen ? "Settings" : "Todo"
+            text: {
+              if (root.settingsOpen) return "Settings"
+              if (root.calendarOpen) return Qt.formatDate(root.calMonth, "MMMM yyyy")
+              if (root.dayMode) return Qt.formatDate(root.viewDay, "ddd d MMM")
+              return "Todo"
+            }
             color: root.fg
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             font.bold: true
+          }
+
+          // How far back you are, in the words you would use for it.
+          Text {
+            id: sinceLabel
+            anchors.left: title.right
+            anchors.leftMargin: Style.space(8)
+            anchors.baseline: title.baseline
+            visible: root.dayMode && !root.settingsOpen && !root.calendarOpen
+            text: root.dayOffset === -1 ? "yesterday" : (-root.dayOffset) + " days ago"
+            color: root.dim
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
+          // The keyboard is the point, but a date you can step with a pointer
+          // costs two glyphs. Drawn flanking the title, as the design has it.
+          Text {
+            id: backChevron
+            anchors.right: title.left
+            anchors.rightMargin: Style.space(7)
+            anchors.baseline: title.baseline
+            visible: (root.dayMode || root.calendarOpen) && !root.settingsOpen
+            text: "‹"
+            color: backMouse.containsMouse ? Color.accent : root.fg
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+
+            MouseArea {
+              id: backMouse
+              anchors.fill: parent
+              anchors.margins: -Style.space(4)
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.calendarOpen ? root.stepMonth(-1) : root.stepDay(-1)
+            }
+          }
+
+          Text {
+            id: forwardChevron
+            // Nothing to see past today on a day view; a month may step on.
+            readonly property bool live: root.calendarOpen || root.dayOffset < 0
+
+            anchors.left: root.calendarOpen ? title.right : sinceLabel.right
+            anchors.leftMargin: Style.space(7)
+            anchors.baseline: title.baseline
+            visible: (root.dayMode || root.calendarOpen) && !root.settingsOpen
+            text: "›"
+            color: !forwardChevron.live
+              ? Util.alpha(Color.popups.text, 0.18)
+              : (forwardMouse.containsMouse ? Color.accent : root.fg)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+
+            MouseArea {
+              id: forwardMouse
+              anchors.fill: parent
+              anchors.margins: -Style.space(4)
+              hoverEnabled: forwardChevron.live
+              enabled: forwardChevron.live
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.calendarOpen ? root.stepMonth(1) : root.stepDay(1)
+            }
           }
 
           PanelActionButton {
@@ -287,7 +556,7 @@ Panel {
             anchors.right: settingsButton.left
             anchors.rightMargin: Style.space(8)
             anchors.baseline: title.baseline
-            visible: !root.settingsOpen
+            visible: !root.settingsOpen && !root.calendarOpen && !root.dayMode
             text: Qt.formatDate(root.today, "ddd d MMM")
             color: root.dim
             font.family: Style.font.family
@@ -319,7 +588,7 @@ Panel {
         Item {
           width: parent.width
           height: todayHeader.implicitHeight
-          visible: root.todayRows.length > 0 && !root.settingsOpen
+          visible: root.todayRows.length > 0 && !root.settingsOpen && !root.calendarOpen && !root.dayMode
 
           PanelSectionHeader { id: todayHeader; text: "TODAY" }
 
@@ -336,7 +605,7 @@ Panel {
 
         Column {
           width: parent.width
-          visible: root.todayRows.length > 0 && !root.settingsOpen
+          visible: root.todayRows.length > 0 && !root.settingsOpen && !root.calendarOpen && !root.dayMode
 
           Repeater {
             model: root.todayRows
@@ -349,7 +618,7 @@ Panel {
         Item {
           width: parent.width
           height: lateHeader.implicitHeight
-          visible: root.lateRows.length > 0 && !root.settingsOpen
+          visible: root.lateRows.length > 0 && !root.settingsOpen && !root.calendarOpen && !root.dayMode
 
           PanelSectionHeader { id: lateHeader; text: "DANGLING" }
 
@@ -366,11 +635,124 @@ Panel {
 
         Column {
           width: parent.width
-          visible: root.lateRows.length > 0 && !root.settingsOpen
+          visible: root.lateRows.length > 0 && !root.settingsOpen && !root.calendarOpen && !root.dayMode
 
           Repeater {
             model: root.lateRows
             delegate: taskRow
+          }
+        }
+
+        // ---- a past day: one list, no TODAY/DANGLING split.
+
+        Item {
+          width: parent.width
+          height: dayHeader.implicitHeight
+          visible: root.dayMode && root.dayTodos.length > 0 && !root.settingsOpen && !root.calendarOpen
+
+          PanelSectionHeader { id: dayHeader; text: "TODO" }
+
+          Text {
+            anchors.right: parent.right
+            anchors.baseline: dayHeader.baseline
+            text: root.dayTodos.length
+            color: root.sectionColor
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+        }
+
+        Column {
+          width: parent.width
+          visible: root.dayMode && root.dayTodos.length > 0 && !root.settingsOpen && !root.calendarOpen
+
+          Repeater {
+            model: root.dayTodos
+            delegate: taskRow
+          }
+        }
+
+        // ---- the log. Record, not decision: no status mark, no cursor, and
+        //      the mark column left empty is what says so.
+
+        Item {
+          width: parent.width
+          height: logHeader.implicitHeight
+          visible: root.dayNotes.length > 0 && !root.settingsOpen && !root.calendarOpen
+
+          PanelSectionHeader { id: logHeader; text: "LOG" }
+
+          Text {
+            anchors.right: parent.right
+            anchors.baseline: logHeader.baseline
+            text: root.dayNotes.length
+            color: root.sectionColor
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+        }
+
+        Column {
+          width: parent.width
+          visible: root.dayNotes.length > 0 && !root.settingsOpen && !root.calendarOpen
+
+          Repeater {
+            model: root.dayNotes
+
+            Item {
+              required property var modelData
+
+              width: parent ? parent.width : 0
+              height: noteText.implicitHeight + Style.space(8)
+
+              Row {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(9)
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Math.round(Style.font.body * 1.15)
+                  horizontalAlignment: Text.AlignHCenter
+                  text: "·"
+                  color: root.dim
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  id: noteText
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: parent.width - parent.spacing - Math.round(Style.font.body * 1.15)
+                  elide: Text.ElideRight
+                  text: modelData.text
+                  color: root.fg
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+              }
+            }
+          }
+        }
+
+        // ---- the calendar, in place of the list.
+
+        CalendarView {
+          id: calendarView
+          width: parent.width
+          visible: root.calendarOpen
+
+          month: root.calMonth
+          cursorDay: root.calCursor
+          today: root.today
+          days: root.monthDays
+
+          onDayPicked: function (day) {
+            root.calCursor = day
+            root.openCalendarDay()
           }
         }
 
@@ -379,8 +761,9 @@ Panel {
 
         Text {
           width: parent.width
-          visible: root.actionable.length === 0 && !root.settingsOpen
-          text: "Nothing dangling."
+          visible: root.actionable.length === 0 && root.dayNotes.length === 0
+            && !root.settingsOpen && !root.calendarOpen
+          text: root.dayMode ? "Nothing on this day." : "Nothing dangling."
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -410,15 +793,35 @@ Panel {
           visible: !root.settingsOpen
 
           Repeater {
-            model: [
-              { key: "j/k", what: "move" },
-              { key: "m", what: "migrate" },
-              { key: "x/⏎", what: "done" },
-              { key: "d", what: "drop" },
-              { key: "a", what: "add" },
-              { key: "n", what: "note" },
-              { key: "s", what: "settings" }
-            ]
+            model: root.calendarOpen
+              ? [
+                  { key: "h/j/k/l", what: "move" },
+                  { key: "[ ]", what: "month" },
+                  { key: "⏎", what: "open" },
+                  { key: "t", what: "today" },
+                  { key: "esc", what: "back" }
+                ]
+              : (root.dayMode
+                ? [
+                    { key: "h/l", what: "day" },
+                    { key: "c", what: "calendar" },
+                    { key: "esc", what: "today" },
+                    { key: "j/k", what: "move" },
+                    { key: "x/⏎", what: "done" },
+                    { key: "d", what: "drop" },
+                    { key: "m", what: "migrate" }
+                  ]
+                : [
+                    { key: "j/k", what: "move" },
+                    { key: "h", what: "yesterday" },
+                    { key: "c", what: "calendar" },
+                    { key: "m", what: "migrate" },
+                    { key: "x/⏎", what: "done" },
+                    { key: "d", what: "drop" },
+                    { key: "a", what: "add" },
+                    { key: "n", what: "note" },
+                    { key: "s", what: "settings" }
+                  ])
 
             Text {
               required property var modelData
@@ -445,7 +848,9 @@ Panel {
       required property int index
 
       readonly property bool isToday: modelData.age === 0
-      readonly property int globalIndex: isToday ? index : root.todayRows.length + index
+      readonly property int globalIndex: root.dayMode
+        ? index
+        : (isToday ? index : root.todayRows.length + index)
       readonly property bool hasCursor: root.opened && globalIndex === root.cursor
       readonly property bool dropped: modelData.status === "-"
       readonly property bool receded: modelData.status !== " "

@@ -285,6 +285,56 @@ def test_sections_do_not_bleed_into_each_other():
         assert [l for l in lines[log_first:log_last] if l.strip()] == ["- first note", "- second note"]
 
 
+def test_the_log_reads_back_as_notes():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        b.cmd_add(c, Args(text="a real todo", when=""))
+        b.cmd_note(c, Args(text="shipped the invoice"))
+        b.cmd_note(c, Args(text="accountant wants Q3 numbers"))
+
+        notes = b.notes_in(c, b.note_path(c, date.today()), date.today())
+        assert [n["text"] for n in notes] == ["shipped the invoice", "accountant wants Q3 numbers"]
+        # the todo stays out of the log, the same way the log stays out of the list
+        assert not any("a real todo" in n["text"] for n in notes)
+        # notes carry no ref: there is nothing about one to decide
+        assert all("ref" not in n for n in notes)
+
+        # a day with no note at all reads as no notes, not as a crash
+        assert b.notes_in(c, b.note_path(c, date.today() + timedelta(days=5)), date.today()) == []
+
+
+def test_a_month_is_counted_in_one_walk():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        first, last = b.month_range(b.fmt_date("YYYY-MM", today))
+
+        b.cmd_add(c, Args(text="still open", when=today.isoformat()))
+        b.cmd_add(c, Args(text="finished", when=today.isoformat()))
+        b.cmd_done(c, Args(ref=b.today_tasks(c)[1]["ref"]))
+        b.cmd_note(c, Args(text="a note"))
+        # a day inside the month that only ever got a note
+        other = first if first != today else first + timedelta(days=1)
+        b.append_to_section(c, other, c["log_section"], "- noted, nothing to do")
+
+        rows = {r["day"]: r for r in b.walk_days(c, first, last)}
+        assert rows[today.isoformat()]["open"] == 1
+        assert rows[today.isoformat()]["done"] == 1
+        assert rows[today.isoformat()]["notes"] == 1
+        # a note-only day still shows up — the calendar has to know it exists
+        assert rows[other.isoformat()] == {"day": other.isoformat(), "todos": 0,
+                                           "open": 0, "done": 0, "notes": 1}
+        # and days outside the range are not in the walk at all
+        assert all(first.isoformat() <= d <= last.isoformat() for d in rows)
+
+
+def test_month_range_rolls_the_year():
+    assert b.month_range("2026-12") == (date(2026, 12, 1), date(2026, 12, 31))
+    assert b.month_range("2026-02") == (date(2026, 2, 1), date(2026, 2, 28))
+    assert b.month_range("2024-02") == (date(2024, 2, 1), date(2024, 2, 29))
+    assert b.month_range("not-a-month") == (None, None)
+
+
 def test_clean_text_strips_our_own_marks():
     assert b.clean_text("ship it ✅ 2026-09-16") == "ship it"
     assert b.clean_text("ship it → [[2026-09-18]]") == "ship it"

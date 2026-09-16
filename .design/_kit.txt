@@ -1,0 +1,5 @@
+ground  #dce0e8   card #eff1f5   border #1e66f5 2px r8   pad 14   content 360
+fg #4c4f69   dim rgba(76,79,105,.38)   section #36384b   sel rgba(76,79,105,.08)
+sep rgba(76,79,105,.12)   accent #1e66f5   urgent #d20f39
+type 10 caption / 11 bodySmall / 12 body / 14 title   JetBrains Mono
+row 24px, gap 9, mark 14px  (StatusMark viewBox 0 0 16 16, stroke 1.4, square/miter)

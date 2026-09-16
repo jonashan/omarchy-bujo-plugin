@@ -1,0 +1,114 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Day view"
+    },
+    {
+      "id": "page-2",
+      "name": "Not chosen"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Today.dc.html",
+      "page": "page-1",
+      "x": 0,
+      "y": 0,
+      "w": 440,
+      "h": 400,
+      "title": "Today — now with its log"
+    },
+    {
+      "file": "Main.dc.html",
+      "page": "page-1",
+      "x": 520,
+      "y": 0,
+      "w": 440,
+      "h": 390,
+      "title": "Day view — h/l steps the day"
+    },
+    {
+      "file": "Calendar.dc.html",
+      "page": "page-1",
+      "x": 1040,
+      "y": 0,
+      "w": 440,
+      "h": 410,
+      "title": "Calendar — c from either view"
+    },
+    {
+      "file": "Empty.dc.html",
+      "page": "page-1",
+      "x": 520,
+      "y": 540,
+      "w": 440,
+      "h": 190,
+      "title": "Day view — nothing there"
+    },
+    {
+      "file": "DayRail.dc.html",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 440,
+      "h": 430,
+      "title": "Day rail"
+    },
+    {
+      "file": "Timeline.dc.html",
+      "page": "page-2",
+      "x": 520,
+      "y": 0,
+      "w": 440,
+      "h": 490,
+      "title": "One timeline"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "anchor",
+      "page": "page-1",
+      "x": 0,
+      "y": -150,
+      "w": 440,
+      "text": "Today, with LOG added below DANGLING. Order is decisions first, record last — the log carries no status because there is nothing in it to decide."
+    },
+    {
+      "id": "recommended",
+      "page": "page-1",
+      "x": 520,
+      "y": -150,
+      "w": 440,
+      "text": "The day view. h/l and ←/→ already reach onMoveRequested and are thrown away today (`if (dy !== 0)`), so the day axis costs one binding.\n\nTODAY/DANGLING collapse into one TODO list here: \"dangling\" is a relationship to today, which a past day doesn't have."
+    },
+    {
+      "id": "calendar",
+      "page": "page-1",
+      "x": 1040,
+      "y": -150,
+      "w": 440,
+      "text": "c is free — it was \"done\" until that moved to x.\n\nThe dot is the point of the grid: a past day still carrying open todos is drawn in urgent, so a month reads as a debt map rather than a date picker. Dim numbers are days with no note at all.\n\nEnter opens the day; the panel already routes Enter to activateRequested, so calendar mode just claims it the way settings claims letters."
+    },
+    {
+      "id": "constraint",
+      "page": "page-1",
+      "x": 1040,
+      "y": 440,
+      "w": 440,
+      "text": "Two CLI gaps before any of this ships:\n\n1. Notes are write-only — tasks_in only ever reads cfg[\"section\"], so nothing reads `## Log` back. Both LOG sections need a read path.\n\n2. The grid needs per-day counts in ONE pass — 30 `list --day` processes a month is not it. scan(cfg, since, until) already walks a range in one go, so a `bujo days 2026-09 --json` returning {day, open, done, notes} is a thin wrapper over what exists."
+    },
+    {
+      "id": "tradeoffs",
+      "page": "page-2",
+      "x": 0,
+      "y": -170,
+      "w": 960,
+      "text": "Not chosen, kept for the record.\n\nDay rail — a picker first, a day second. Costs a second cursor model inside 360px: j/k means \"pick a day\" up top and \"pick a row\" below. The calendar does this job better, and only when asked for.\n\nTimeline — no mode at all, which was the appeal. But the panel stops being a decision surface and becomes a feed, and `a` (add) loses an obvious day to land on."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

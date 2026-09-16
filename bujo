@@ -69,6 +69,9 @@ DATE_HOLE_RE = re.compile(r"\{\{date:([^}]*)\}\}")
 DONE_STAMP_RE = re.compile(r"\s*✅\s*\d{4}-\d{2}-\d{2}\s*$")
 MOVED_TO_RE = re.compile(r"\s*→\s*\[\[[^\]]+\]\]\s*$")
 MOVED_TARGET_RE = re.compile(r"→\s*\[\[(\d{4}-\d{2}-\d{2})\]\]")
+# Any bullet in the log section is a note, checkbox-shaped ones included — it
+# is what the file says, and the log is not ours to tidy.
+NOTE_RE = re.compile(r"^\s*- (?P<text>.*)$")
 
 MONTHS = ["January", "February", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
@@ -465,6 +468,58 @@ def tasks_in(cfg, path, day):
     return out
 
 
+def notes_in(cfg, path, day):
+    """The log section's bullets. No status and no ref: a note is a record,
+    and there is nothing about one to decide."""
+    lines = read_lines(path)
+    bounds = section_bounds(lines, cfg["log_section"])
+    if bounds is None:
+        return []
+    out = []
+    for i in range(bounds[0], bounds[1]):
+        m = NOTE_RE.match(lines[i])
+        if m and m.group("text").strip():
+            out.append({"day": day.isoformat(), "text": m.group("text").strip()})
+    return out
+
+
+def walk_days(cfg, since, until):
+    """Every day in range that has a note, counted in ONE pass over the tree.
+
+    The calendar needs a month at a time and a process per day is not a
+    calendar, it is thirty processes.
+    """
+    matcher, kinds = path_matcher(cfg)
+    root = journal_root(cfg)
+    out = {}
+    if root.exists():
+        for p in root.rglob("*.md"):
+            d = path_to_date(matcher, kinds, str(p.relative_to(cfg["vault"])))
+            if d is None or d < since or d > until:
+                continue
+            tasks = tasks_in(cfg, p, d)
+            out[d] = {
+                "day": d.isoformat(),
+                "todos": len(tasks),
+                "open": len([t for t in tasks if t["status"] == OPEN]),
+                "done": len([t for t in tasks if t["status"] == DONE]),
+                "notes": len(notes_in(cfg, p, d)),
+            }
+    return [out[d] for d in sorted(out)]
+
+
+def month_range(month):
+    """'2026-09' -> (first, last). Its own function because December has to
+    roll the year, and getting that wrong loses a month of history silently."""
+    try:
+        year, mon = (int(x) for x in str(month).split("-"))
+        first = date(year, mon, 1)
+    except ValueError:
+        return None, None
+    last = date(year + (mon == 12), (mon % 12) + 1, 1) - timedelta(days=1)
+    return first, last
+
+
 def scan(cfg, since=None, until=None):
     """Every daily note in range, oldest first. Dangling is unbounded by design."""
     matcher, kinds = path_matcher(cfg)
@@ -736,6 +791,33 @@ def cmd_list(cfg, args):
         print("[%s] %s%s" % (t["status"], t["clean"], tail))
 
 
+def cmd_log(cfg, args):
+    """Read the day's log back. `note` writes one, this reads them."""
+    d = parse_when(args.day)
+    if d is None:
+        sys.exit("bujo: could not read a date from %r" % args.day)
+    path = note_path(cfg, d)
+    rows = notes_in(cfg, path, d) if path.exists() else []
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False))
+        return
+    for n in rows:
+        print("- %s" % n["text"])
+
+
+def cmd_days(cfg, args):
+    """Per-day counts for a month — what the calendar colours its dots from."""
+    first, last = month_range(args.month or fmt_date("YYYY-MM", date.today()))
+    if first is None:
+        sys.exit("bujo: months look like YYYY-MM, got %r" % args.month)
+    rows = walk_days(cfg, first, last)
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False))
+        return
+    for r in rows:
+        print("%s  %d open  %d done  %d noted" % (r["day"], r["open"], r["done"], r["notes"]))
+
+
 def cmd_bar(cfg, args):
     today = date.today()
     open_today = len([t for t in today_tasks(cfg, today) if t["status"] == OPEN])
@@ -901,6 +983,16 @@ def main(argv=None):
     mvi = sub.add_parser("move-interactive", help="prompt for a day, then migrate")
     mvi.add_argument("ref")
     mvi.set_defaults(fn=cmd_move_interactive)
+
+    lg = sub.add_parser("log", help="read a day's ## Log bullets back")
+    lg.add_argument("--day", default="")
+    lg.add_argument("--json", action="store_true")
+    lg.set_defaults(fn=cmd_log)
+
+    dy = sub.add_parser("days", help="per-day counts for a month, for the calendar")
+    dy.add_argument("month", nargs="?", default="", help="YYYY-MM, default this month")
+    dy.add_argument("--json", action="store_true")
+    dy.set_defaults(fn=cmd_days)
 
     sub.add_parser("bar", help="waybar-style JSON for the omarchy bar").set_defaults(fn=cmd_bar)
 

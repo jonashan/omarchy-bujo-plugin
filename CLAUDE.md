@@ -101,6 +101,24 @@ chooser is another window, so the layer-shell panel loses focus and closes;
 Panel.qml runs it as a `Process` and calls `open()` in `onExited`, and
 `settingsOpen` survives the close, so the page comes back where it was.
 
+**The panel has one cursor and two axes.** `PanelKeyCatcher` delivers both:
+`dy` walks the rows, `dx` walks the days (`h`/`l` and the arrows were arriving
+and being discarded before the day view existed). A past day is one plain list
+-- `actionable` switches to `dayTodos` and the TODAY/DANGLING split disappears,
+because "dangling" is a relationship to today. `taskRow`'s `globalIndex` has to
+know which of the two shapes it is in, or the cursor lands on the wrong row.
+
+**The calendar buys a month in one call.** `bujo days YYYY-MM --json` walks the
+tree once and returns per-day counts; `list --day` per cell would be thirty
+processes for one grid. `walk_days` is the only reader that counts notes and
+todos together, and it reports days that have only a note — the grid has to
+know those exist. Colour is the point of that grid rather than the dates: an
+open todo on a past day is `urgent`, today's is `accent`.
+
+**Notes are read, never acted on.** `notes_in` returns no `ref` on purpose — a
+ref exists so a write can be verified, and there is no write here. Anything
+that wants to change a log line goes through Obsidian, or earns a ref first.
+
 Date parsing is delegated to GNU `date -d`. It handles "tomorrow", "friday",
 "+3 days"; it does not do recurrence, which is the line where Tasks-plugin `🔁`
 syntax would have to be adopted.

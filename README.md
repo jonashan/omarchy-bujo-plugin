@@ -85,6 +85,8 @@ bujo list --dangling --json
 bujo done <ref>                          # [x] + ✅ today
 bujo drop <ref>                          # [-]
 bujo move <ref> tomorrow                 # [>] here, a fresh [ ] there
+bujo log --day yesterday                 # read a day's log back; `note` writes one
+bujo days 2026-09 --json                 # per-day counts for a month, one walk
 bujo bar                                 # waybar-style JSON for the bar
 
 bujo config get                          # the effective settings, --json for the panel
@@ -125,6 +127,20 @@ something to decide about. Left click opens the panel, right click captures.
 In the panel: `j/k` move, `x` or `Enter` done, `d` drop, `m` migrate, `a` add,
 `n` note, `s` settings, `Esc` closes. It reads on open and polls once a second while
 visible, so a box ticked in Obsidian shows up here.
+
+Today's list shows the day's log under it — record rather than decision, so
+those rows carry no status mark, and the empty mark column is what says so.
+
+**Previous days.** `h` and `l` (or `←`/`→`) step the date; the header becomes
+the day you are on and the TODAY/DANGLING split collapses into one list,
+because "dangling" is a relationship to today that a past day has not got.
+Every verb still works on the row under the cursor. `Esc` returns to today.
+
+`c` opens a month. Days with a note are legible, days without are dim, and a
+day still carrying open todos gets a dot — `urgent` once it is in the past, so
+a month reads as a map of what is owed rather than a date picker. `h/j/k/l`
+walks it (off the edge turns the page), `[` and `]` step months, `Enter` opens
+the day under the cursor.
 
 The settings page — the cog, or `s` — edits the vault, the daily-note pattern,
 the two section headings and the template, with today's note resolved live
@@ -190,14 +206,22 @@ statically.
 - **P2 · panel** — done. Quickshell bar widget plus keyboard-driven panel.
 - **P3 · quick notes** — done. `- ` bullets into `## Log`, same plumbing.
 - **P4 · settings** — done. A page in the panel over `bujo config`.
+- **P5 · previous days** — done. `h`/`l` steps the day, `c` opens a month, and
+  both views show the log beside the todos.
 
 Known ceiling: if `omarchy-file-select` is missing — an Omarchy older than this
 plugin supports — the folder button does nothing rather than saying so;
 surfacing a failed helper needs an error line the panel does not have yet. Type
 the path instead.
 
-Notes are capture-only: they carry no status and need no decision, so the
-panel does not show them. Read the day in Obsidian.
+Notes are capture-only: they carry no status and need no decision. The panel
+shows them; it does not let you act on one, because there is nothing about a
+note to act on. Editing is Obsidian's job.
+
+Navigation stops at today. Migrating a task forward puts it on a day you
+cannot step to — the calendar still shows its dot, and the task comes to you
+when that day arrives. Add a forward step if looking ahead turns out to be
+worth a key.
 
 Known ceiling: `m` opens a free-text prompt rather than the fixed rows
 (tomorrow / next week / pick a date) the design calls for. Upgrade when the

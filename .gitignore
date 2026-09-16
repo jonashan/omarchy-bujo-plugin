@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+# The seeded design canvas is a 2 MB build artefact; .design/*.dc.html is the source.
+.design/bujo-day-history.html

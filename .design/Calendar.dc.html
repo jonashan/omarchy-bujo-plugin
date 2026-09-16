@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", monospace; }
+    a { color: #1e66f5; } a:hover { color: #1a56d0; }
+    .ground { display: flex; align-items: flex-start; justify-content: center;
+              padding: 24px; background: #dce0e8; min-height: 100%; box-sizing: border-box; }
+    .card { width: 360px; padding: 14px; background: #eff1f5; border: 2px solid #1e66f5;
+            border-radius: 8px; box-sizing: content-box; }
+    .col { display: flex; flex-direction: column; gap: 8px; width: 360px; }
+    .hdr { display: flex; align-items: center; gap: 8px; height: 22px; }
+    .ttl { font-size: 12px; font-weight: 700; color: #4c4f69; }
+    .sep { height: 1px; background: rgba(76,79,105,0.12); }
+    .sect { display: flex; align-items: baseline; justify-content: space-between;
+            font-size: 10px; font-weight: 700; color: #36384b; padding-top: 2px; }
+    .rows { display: flex; flex-direction: column; }
+    .row { display: flex; align-items: center; gap: 9px; height: 24px; }
+    .lbl { flex: 1; font-size: 12px; color: #4c4f69; min-width: 0;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .age { font-size: 10px; color: rgba(76,79,105,0.38); }
+    .dim { color: rgba(76,79,105,0.38); }
+    .on { color: #1e66f5; }
+    .cut { text-decoration: line-through; }
+    .cur { background: rgba(76,79,105,0.08); }
+    .legend { display: flex; flex-wrap: wrap; gap: 11px; font-size: 10px;
+              color: rgba(76,79,105,0.38); }
+    .k { color: #36384b; }
+    .note { font-size: 12px; color: #4c4f69; flex: 1; }
+    .dot { width: 14px; display: flex; justify-content: center;
+           font-size: 12px; color: rgba(76,79,105,0.38); }
+  </style>
+</helmet>
+<div class="ground">
+  <div class="card">
+  <div class="col">
+  <div class="hdr">
+    <div style="display:flex;align-items:center;gap:7px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4c4f69" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M15 4L7.5 12L15 20"/></svg><div class="ttl">September 2026</div><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4c4f69" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M9 4L16.5 12L9 20"/></svg>
+    </div>
+    <div style="flex:1"></div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4c4f69" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+  <div class="sep"></div>
+    <div style="display:grid;grid-template-columns:repeat(7, minmax(0, 1fr));gap:2px">
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Mo</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Tu</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">We</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Th</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Fr</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Sa</div>
+      <div style="font-size:10px;font-weight:700;color:#36384b;text-align:center;padding-bottom:2px">Su</div>
+      <div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">1</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">2</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">3</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">4</div><div style="width:3px;height:3px;border-radius:50%;background:#d20f39"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">5</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">6</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">7</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">8</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">9</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">10</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">11</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">12</div><div style="width:3px;height:3px;border-radius:50%;background:#d20f39"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">13</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:rgba(76,79,105,0.08);border-radius:2px"><div style="font-size:12px;font-weight:400;color:#1e66f5;line-height:1">14</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:#4c4f69;line-height:1">15</div><div style="width:3px;height:3px;border-radius:50%;background:#d20f39"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:700;color:#1e66f5;line-height:1">16</div><div style="width:3px;height:3px;border-radius:50%;background:#1e66f5"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">17</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">18</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">19</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">20</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">21</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">22</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">23</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">24</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">25</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">26</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">27</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">28</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">29</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div style="height:30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border-radius:2px"><div style="font-size:12px;font-weight:400;color:rgba(76,79,105,0.38);line-height:1">30</div><div style="width:3px;height:3px;border-radius:50%;background:transparent"></div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+      <div></div>
+    </div>
+  <div class="sep"></div>
+  <div style="display:flex;align-items:baseline;gap:9px">
+    <div style="font-size:12px;color:#1e66f5">Mon 14 Sep</div>
+    <div style="flex:1;font-size:10px;color:rgba(76,79,105,0.38)">4 todo, none open · 2 noted</div>
+  </div>
+  <div style="display:flex;gap:11px;font-size:10px;color:rgba(76,79,105,0.38);padding-top:2px">
+    <div><span style="display:inline-block;width:3px;height:3px;border-radius:50%;
+      background:#d20f39;vertical-align:2px"></span> still open</div>
+    <div><span style="display:inline-block;width:3px;height:3px;border-radius:50%;
+      background:#1e66f5;vertical-align:2px"></span> open today</div>
+    <div class="dim">dim · no note</div>
+  </div>
+  <div class="sep"></div>
+  <div class="legend">
+    <div><span class="k">h/j/k/l</span> move</div>
+    <div><span class="k">[ ]</span> month</div>
+    <div><span class="k">⏎</span> open</div>
+    <div><span class="k">t</span> today</div>
+    <div><span class="k">esc</span> back</div>
+  </div>
+  </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
