@@ -1,0 +1,527 @@
+#!/usr/bin/env python3
+"""bujo — bullet-journal todos living in Obsidian daily notes.
+
+Owns exactly one section of a daily note (default "## Todo") and nothing else.
+Reads only the lines between that heading and the next "## " or EOF, so
+frontmatter, journal prompts and stray checkboxes elsewhere are invisible.
+
+Markdown is the database. This is the only thing that writes it.
+"""
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    sys.exit("bujo needs Python 3.11+ (tomllib)")
+
+CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "bujo" / "config.toml"
+
+DEFAULT_TEMPLATE = "---\ntags:\n  - journal/daily\n---\n# {{date:YYYY-MM-DD}}\n\n## Todo\n"
+
+DEFAULTS = {
+    "vault": "~/Documents/SecondBrain",
+    "path": "05. Journals/Daily/{{date:YYYY}}/{{date:MMMM}}/{{date:YYYY-MM-DD}}.md",
+    "section": "## Todo",
+    "icon": "\U000f0132",
+    "urgent_days": 7,
+    "template": DEFAULT_TEMPLATE,
+    "template_file": "",
+}
+
+OPEN, DONE, MIGRATED, DROPPED = " ", "x", ">", "-"
+TASK_RE = re.compile(r"^(?P<indent>\s*)- \[(?P<status>.)\] (?P<text>.*)$")
+DATE_HOLE_RE = re.compile(r"\{\{date:([^}]*)\}\}")
+DONE_STAMP_RE = re.compile(r"\s*✅\s*\d{4}-\d{2}-\d{2}\s*$")
+MOVED_TO_RE = re.compile(r"\s*→\s*\[\[[^\]]+\]\]\s*$")
+
+MONTHS = ["January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"]
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+# Longest token first — "MM" must not eat the front of "MMMM".
+TOKENS = [
+    ("YYYY", lambda d: "%04d" % d.year, r"\d{4}", "Y"),
+    ("MMMM", lambda d: MONTHS[d.month - 1], r"[A-Za-z]+", "MN"),
+    ("MMM", lambda d: MONTHS[d.month - 1][:3], r"[A-Za-z]{3}", "MA"),
+    ("MM", lambda d: "%02d" % d.month, r"\d{2}", "m"),
+    ("dddd", lambda d: WEEKDAYS[d.weekday()], r"[A-Za-z]+", None),
+    ("ddd", lambda d: WEEKDAYS[d.weekday()][:3], r"[A-Za-z]{3}", None),
+    ("DD", lambda d: "%02d" % d.day, r"\d{2}", "d"),
+    ("D", lambda d: str(d.day), r"\d{1,2}", "d"),
+    ("M", lambda d: str(d.month), r"\d{1,2}", "m"),
+]
+
+
+# --------------------------------------------------------------------- config
+
+def load_config():
+    cfg = dict(DEFAULTS)
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open("rb") as fh:
+            cfg.update(tomllib.load(fh))
+    else:
+        write_default_config()
+    cfg["vault"] = Path(cfg["vault"]).expanduser()
+    return cfg
+
+
+def write_default_config():
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    body = (
+        '# bujo — see README. Every {{date:FORMAT}} uses moment-style tokens\n'
+        '# (YYYY MMMM MMM MM M DD D dddd ddd) rendered from a fixed English\n'
+        '# table, never the system locale.\n\n'
+        'vault = "%s"\n'
+        'path = "%s"\n'
+        'section = "%s"\n'
+        'icon = "%s"\n'
+        'urgent_days = %d\n\n'
+        '# Rendered once when a note has to be created. Never read again.\n'
+        '# Set template_file to a vault-relative path to use a file instead.\n'
+        'template_file = ""\n'
+        'template = """\\\n%s"""\n'
+    ) % (DEFAULTS["vault"], DEFAULTS["path"], DEFAULTS["section"],
+         DEFAULTS["icon"], DEFAULTS["urgent_days"], DEFAULT_TEMPLATE)
+    CONFIG_PATH.write_text(body, encoding="utf-8")
+
+
+# ----------------------------------------------------------------- date tokens
+
+def fmt_date(fmt, d):
+    out, i = [], 0
+    while i < len(fmt):
+        for token, render, _rx, _kind in TOKENS:
+            if fmt.startswith(token, i):
+                out.append(render(d))
+                i += len(token)
+                break
+        else:
+            out.append(fmt[i])
+            i += 1
+    return "".join(out)
+
+
+def render(text, d):
+    return DATE_HOLE_RE.sub(lambda m: fmt_date(m.group(1), d), text)
+
+
+def parse_when(when, today=None):
+    """Delegate natural-language dates to GNU date. No parser of our own."""
+    today = today or date.today()
+    if not when:
+        return today
+    try:
+        out = subprocess.run(["date", "-d", when, "+%Y-%m-%d"],
+                             capture_output=True, text=True, check=True,
+                             env={**os.environ, "LC_TIME": "C"})
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    return date.fromisoformat(out.stdout.strip())
+
+
+# ------------------------------------------------------------------- note path
+
+def note_path(cfg, d):
+    return cfg["vault"] / render(cfg["path"], d)
+
+
+def journal_root(cfg):
+    """Static prefix of the path pattern — the subtree worth scanning."""
+    head = cfg["path"].split("{{", 1)[0]
+    return cfg["vault"] / Path(head).parent if "/" in head else cfg["vault"]
+
+
+def path_matcher(cfg):
+    """Turn the path pattern into a regex that reads a date back out of a path.
+
+    This is what makes the tool portable: one pattern setting covers core
+    Daily notes, Periodic Notes and journals users alike, and month names are
+    matched from our own English table rather than the system locale.
+    """
+    parts, kinds, n = [], [], 0
+    pos = 0
+    for m in DATE_HOLE_RE.finditer(cfg["path"]):
+        parts.append(re.escape(cfg["path"][pos:m.start()]))
+        fmt, i = m.group(1), 0
+        while i < len(fmt):
+            for token, _render, rx, kind in TOKENS:
+                if fmt.startswith(token, i):
+                    if kind:
+                        n += 1
+                        name = "g%d" % n
+                        parts.append("(?P<%s>%s)" % (name, rx))
+                        kinds.append((name, kind))
+                    else:
+                        parts.append("(?:%s)" % rx)
+                    i += len(token)
+                    break
+            else:
+                parts.append(re.escape(fmt[i]))
+                i += 1
+        pos = m.end()
+    parts.append(re.escape(cfg["path"][pos:]))
+    return re.compile("^" + "".join(parts) + "$"), kinds
+
+
+def path_to_date(matcher, kinds, relpath):
+    m = matcher.match(relpath)
+    if not m:
+        return None
+    # Last group wins, so the filename (deepest in the path) beats a folder
+    # that disagrees with it — and an unreadable month-name folder falls back
+    # to the numeric month rather than dropping the note off the radar.
+    year = month = day = None
+    for name, kind in kinds:
+        v = m.group(name)
+        if kind == "Y":
+            year = int(v)
+        elif kind == "m":
+            month = int(v)
+        elif kind in ("MN", "MA"):
+            cut = 3 if kind == "MA" else None
+            found = next((i + 1 for i, nm in enumerate(MONTHS) if nm[:cut].lower() == v.lower()), None)
+            if found:
+                month = found
+        elif kind == "d":
+            day = int(v)
+    if not (year and month and day):
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+# ------------------------------------------------------------ the one section
+
+def read_lines(path):
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+
+def write_lines(path, lines):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".bujo-", suffix=".md")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    os.replace(tmp, path)
+
+
+def section_bounds(lines, heading):
+    """(first, last) line indices of the section body, or None if absent."""
+    start = next((i for i, l in enumerate(lines) if l.strip() == heading), None)
+    if start is None:
+        return None
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            end = j
+            break
+    return start + 1, end
+
+
+def ensure_note(cfg, d):
+    """Create the note from the user's template if it isn't there yet."""
+    path = note_path(cfg, d)
+    if path.exists():
+        return path
+    tpl = cfg["template"]
+    if cfg["template_file"]:
+        src = cfg["vault"] / cfg["template_file"]
+        if not src.exists():
+            sys.exit("bujo: template_file not found: %s" % src)
+        tpl = src.read_text(encoding="utf-8")
+    if "<%" in tpl:
+        sys.exit("bujo: template uses Templater syntax, which only Obsidian can render.\n"
+                 "      Point template_file at a {{date:...}} template, or use the inline one.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render(tpl, d), encoding="utf-8")
+    return path
+
+
+def ensure_section(lines, heading):
+    """Append the owned section at the bottom if absent. Never touches the rest."""
+    if section_bounds(lines, heading) is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines:
+            lines.append("")
+        lines.append(heading)
+    return section_bounds(lines, heading)
+
+
+def ref_for(cfg, path, lineno, line):
+    rel = str(path.relative_to(cfg["vault"]))
+    return "%s:%d:%s" % (rel, lineno, hashlib.sha1(line.encode("utf-8")).hexdigest()[:8])
+
+
+def resolve_ref(cfg, ref):
+    """Verify before acting — an Obsidian edit shifts lines under a live panel."""
+    try:
+        rel, lineno, digest = ref.rsplit(":", 2)
+        lineno = int(lineno)
+    except ValueError:
+        sys.exit("bujo: malformed ref %r" % ref)
+    path = cfg["vault"] / rel
+    lines = read_lines(path)
+    if lineno >= len(lines):
+        sys.exit("bujo: that task moved — rescan and try again")
+    if hashlib.sha1(lines[lineno].encode("utf-8")).hexdigest()[:8] != digest:
+        sys.exit("bujo: that task changed under us — rescan and try again")
+    return path, lines, lineno
+
+
+# ------------------------------------------------------------------- the tasks
+
+def clean_text(text):
+    return MOVED_TO_RE.sub("", DONE_STAMP_RE.sub("", text)).strip()
+
+
+def tasks_in(cfg, path, day):
+    bounds = section_bounds(read_lines(path), cfg["section"])
+    if bounds is None:
+        return []
+    lines = read_lines(path)
+    out = []
+    for i in range(bounds[0], bounds[1]):
+        m = TASK_RE.match(lines[i])
+        if m:
+            out.append({
+                "day": day.isoformat(),
+                "status": m.group("status"),
+                "text": m.group("text"),
+                "clean": clean_text(m.group("text")),
+                "indent": len(m.group("indent")),
+                "ref": ref_for(cfg, path, i, lines[i]),
+            })
+    return out
+
+
+def scan(cfg, since=None, until=None):
+    """Every daily note in range, oldest first. Dangling is unbounded by design."""
+    matcher, kinds = path_matcher(cfg)
+    root = journal_root(cfg)
+    found = []
+    if root.exists():
+        for p in root.rglob("*.md"):
+            d = path_to_date(matcher, kinds, str(p.relative_to(cfg["vault"])))
+            if d is None:
+                continue
+            if since and d < since:
+                continue
+            if until and d > until:
+                continue
+            found.append((d, p))
+    found.sort()
+    return [t for d, p in found for t in tasks_in(cfg, p, d)]
+
+
+def dangling(cfg, today=None):
+    today = today or date.today()
+    return [t for t in scan(cfg, until=today - timedelta(days=1)) if t["status"] == OPEN]
+
+
+def today_tasks(cfg, today=None):
+    today = today or date.today()
+    p = note_path(cfg, today)
+    return tasks_in(cfg, p, today) if p.exists() else []
+
+
+# --------------------------------------------------------------------- actions
+
+def cmd_add(cfg, args):
+    d = parse_when(args.when)
+    if d is None:
+        sys.exit("bujo: could not read a date from %r" % args.when)
+    path = ensure_note(cfg, d)
+    lines = read_lines(path)
+    first, last = ensure_section(lines, cfg["section"])
+    at = last
+    while at > first and not lines[at - 1].strip():
+        at -= 1
+    lines.insert(at, "- [ ] %s" % args.text)
+    write_lines(path, lines)
+    print("%s  %s" % (fmt_date("ddd D MMM", d), args.text))
+
+
+def cmd_add_interactive(cfg, args):
+    text = run_or_none(["omarchy-menu-input", "Todo"])
+    if not text:
+        return
+    text, d = split_trailing_date(text.strip())
+    if not text:
+        return
+    path = ensure_note(cfg, d)
+    lines = read_lines(path)
+    first, last = ensure_section(lines, cfg["section"])
+    at = last
+    while at > first and not lines[at - 1].strip():
+        at -= 1
+    lines.insert(at, "- [ ] %s" % text)
+    write_lines(path, lines)
+    when = "today" if d == date.today() else fmt_date("ddd D MMM", d)
+    run_or_none(["omarchy-notification-send", "Todo → %s" % when, text])
+
+
+def split_trailing_date(text, today=None):
+    """"call the accountant friday" -> ("call the accountant", <Fri>).
+
+    Only a suffix that resolves to today or later counts, which is what keeps
+    "pay the march invoice" from being filed under March.
+    """
+    today = today or date.today()
+    words = text.split()
+    for n in (3, 2, 1):
+        if len(words) <= n:
+            continue
+        d = parse_when(" ".join(words[-n:]), today)
+        if d and d >= today:
+            return " ".join(words[:-n]), d
+    return text, today
+
+
+def cmd_done(cfg, args):
+    path, lines, i = resolve_ref(cfg, args.ref)
+    m = TASK_RE.match(lines[i])
+    if not m:
+        sys.exit("bujo: not a task line")
+    text = clean_text(m.group("text"))
+    lines[i] = "%s- [x] %s ✅ %s" % (m.group("indent"), text, date.today().isoformat())
+    write_lines(path, lines)
+    print(lines[i].strip())
+
+
+def cmd_drop(cfg, args):
+    path, lines, i = resolve_ref(cfg, args.ref)
+    m = TASK_RE.match(lines[i])
+    if not m:
+        sys.exit("bujo: not a task line")
+    lines[i] = "%s- [-] %s" % (m.group("indent"), clean_text(m.group("text")))
+    write_lines(path, lines)
+    print(lines[i].strip())
+
+
+def cmd_move(cfg, args):
+    target = parse_when(args.when)
+    if target is None:
+        sys.exit("bujo: could not read a date from %r" % args.when)
+    path, lines, i = resolve_ref(cfg, args.ref)
+    m = TASK_RE.match(lines[i])
+    if not m:
+        sys.exit("bujo: not a task line")
+    text = clean_text(m.group("text"))
+    stamp = fmt_date("YYYY-MM-DD", target)
+
+    # The origin day keeps the record. Nothing ever moves silently.
+    lines[i] = "%s- [>] %s → [[%s]]" % (m.group("indent"), text, stamp)
+    write_lines(path, lines)
+
+    dest = ensure_note(cfg, target)
+    dlines = read_lines(dest)
+    first, last = ensure_section(dlines, cfg["section"])
+    at = last
+    while at > first and not dlines[at - 1].strip():
+        at -= 1
+    dlines.insert(at, "%s- [ ] %s" % (m.group("indent"), text))
+    write_lines(dest, dlines)
+    print("%s → %s" % (text, fmt_date("ddd D MMM", target)))
+
+
+def cmd_list(cfg, args):
+    today = date.today()
+    if args.dangling:
+        rows = dangling(cfg, today)
+    elif args.day:
+        d = parse_when(args.day)
+        rows = tasks_in(cfg, note_path(cfg, d), d) if note_path(cfg, d).exists() else []
+    else:
+        rows = today_tasks(cfg, today) + dangling(cfg, today)
+    # Age lives here, once, so the panel never re-derives the overdue rule.
+    for t in rows:
+        t["age"] = (today - date.fromisoformat(t["day"])).days
+        t["overdue"] = t["age"] > cfg["urgent_days"]
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False))
+        return
+    for t in rows:
+        tail = "  %dd%s" % (t["age"], "!" if t["overdue"] else "") if t["age"] > 0 else ""
+        print("[%s] %s%s" % (t["status"], t["clean"], tail))
+
+
+def cmd_bar(cfg, args):
+    today = date.today()
+    open_today = len([t for t in today_tasks(cfg, today) if t["status"] == OPEN])
+    late = dangling(cfg, today)
+    text = "%s %d" % (cfg["icon"], open_today)
+    if late:
+        text += " · %d" % len(late)
+    oldest = min((date.fromisoformat(t["day"]) for t in late), default=None)
+    tip = "%d open today" % open_today
+    if late:
+        tip += "\n%d dangling, oldest %s" % (len(late), fmt_date("D MMM", oldest))
+    print(json.dumps({"text": text, "tooltip": tip,
+                      "class": "urgent" if late else ""}, ensure_ascii=False))
+
+
+def cmd_path(cfg, args):
+    print(note_path(cfg, parse_when(args.when)))
+
+
+def run_or_none(cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except FileNotFoundError:
+        return None
+
+
+# ------------------------------------------------------------------------ main
+
+def main(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(prog="bujo", description=__doc__.splitlines()[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("add", help="add a todo, optionally for another day")
+    a.add_argument("text")
+    a.add_argument("when", nargs="?", default="", help="tomorrow, friday, +3 days, 2026-09-22")
+    a.set_defaults(fn=cmd_add)
+
+    sub.add_parser("add-interactive", help="prompt via the omarchy menu").set_defaults(fn=cmd_add_interactive)
+
+    l = sub.add_parser("list", help="today plus everything dangling")
+    l.add_argument("--day")
+    l.add_argument("--dangling", action="store_true")
+    l.add_argument("--json", action="store_true")
+    l.set_defaults(fn=cmd_list)
+
+    for name, fn, help_ in (("done", cmd_done, "mark complete"), ("drop", cmd_drop, "mark irrelevant")):
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("ref")
+        s.set_defaults(fn=fn)
+
+    mv = sub.add_parser("move", help="migrate to another day")
+    mv.add_argument("ref")
+    mv.add_argument("when")
+    mv.set_defaults(fn=cmd_move)
+
+    sub.add_parser("bar", help="waybar-style JSON for the omarchy bar").set_defaults(fn=cmd_bar)
+
+    pa = sub.add_parser("path", help="print the note path for a day")
+    pa.add_argument("when", nargs="?", default="")
+    pa.set_defaults(fn=cmd_path)
+
+    args = p.parse_args(argv)
+    args.fn(load_config(), args)
+
+
+if __name__ == "__main__":
+    main()
