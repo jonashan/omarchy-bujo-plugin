@@ -1,8 +1,15 @@
 # bujo
 
-Bullet-journal todos that live in Obsidian daily notes, driven from the Omarchy
-command palette and bar. Markdown is the database; this is the only thing that
-writes it.
+Bullet-journal todos that live in Obsidian daily notes, driven from the
+[Omarchy](https://omarchy.org) command palette and bar. Markdown is the
+database; this is the only thing that writes it.
+
+Today's list and everything still dangling, with a decision for each — done,
+dropped, or migrated to a day you name. No sync service, no database, no
+daemon. Your notes stay plain files that Obsidian, your phone and `grep` all
+read the same way.
+
+Requires Omarchy 4, Python 3.11+, and any Obsidian vault with daily notes.
 
 ## The contract
 

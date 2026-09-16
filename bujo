@@ -73,6 +73,10 @@ def load_config():
     else:
         write_default_config()
     cfg["vault"] = Path(cfg["vault"]).expanduser()
+    if not cfg["vault"].is_dir():
+        sys.exit("bujo: vault not found: %s\n"
+                 "      Set `vault` (and `path`, if your daily notes are laid out\n"
+                 "      differently) in %s" % (cfg["vault"], CONFIG_PATH))
     return cfg
 
 
