@@ -63,6 +63,11 @@ CONFIG_NOTES = {
 }
 
 
+# The capture prompt defaults to 300px, which is about forty characters — a
+# todo is a sentence, not a filename. The menu caps this to the screen, so a
+# generous number degrades rather than overflows.
+MENU_WIDTH = "560"
+
 OPEN, DONE, MIGRATED, DROPPED = " ", "x", ">", "-"
 TASK_RE = re.compile(r"^(?P<indent>\s*)- \[(?P<status>.)\] (?P<text>.*)$")
 DATE_HOLE_RE = re.compile(r"\{\{date:([^}]*)\}\}")
@@ -562,7 +567,7 @@ def cmd_add(cfg, args):
 
 
 def cmd_add_interactive(cfg, args):
-    text = run_or_none(["omarchy-menu-input", "Todo"])
+    text = run_or_none(["omarchy-menu-input", "Todo", "--width", MENU_WIDTH])
     if not text:
         return
     text, d = split_trailing_date(text.strip())
@@ -744,7 +749,7 @@ def cmd_note(cfg, args):
 def cmd_note_interactive(cfg, args):
     # No trailing-date parsing here: a note records what happened, and what
     # happened happened today.
-    text = run_or_none(["omarchy-menu-input", "Note"])
+    text = run_or_none(["omarchy-menu-input", "Note", "--width", MENU_WIDTH])
     if not text or not text.strip():
         return
     append_to_section(cfg, date.today(), cfg["log_section"], "- %s" % text.strip())
@@ -759,7 +764,7 @@ def cmd_move_interactive(cfg, args):
     m = TASK_RE.match(lines[i])
     if m and m.group("status") == MIGRATED:
         return cmd_move(cfg, Args(ref=args.ref, when=""))   # undo, no prompt
-    when = run_or_none(["omarchy-menu-input", "Move to"])
+    when = run_or_none(["omarchy-menu-input", "Move to", "--width", MENU_WIDTH])
     if not when or not when.strip():
         return
     cmd_move(cfg, Args(ref=args.ref, when=when.strip()))

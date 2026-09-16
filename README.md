@@ -97,6 +97,11 @@ bujo config pick vault                   # the desktop folder chooser, then save
 bujo config pick template_file           # ...and stored vault-relative
 ```
 
+`a` and `n` capture through Omarchy's own prompt (`omarchy-menu-input`), asked
+for at 560px rather than its 300px default — a todo is a sentence, not a
+filename. The menu caps that to the screen, so the number degrades rather than
+overflows.
+
 All three actions toggle: `x` on a done task reopens it (and the ✅ stamp goes
 with it), `d` on a dropped one revives it, and `m` on a migrated one brings it
 back.
