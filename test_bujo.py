@@ -148,6 +148,37 @@ def test_trailing_date_split():
     assert text == "book the dentist" and d == date.today()
 
 
+def test_notes_land_in_the_log_and_stay_out_of_the_list():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        b.cmd_add(c, Args(text="a real todo", when=""))
+        b.cmd_note(c, Args(text="shipped the invoice"))
+        b.cmd_note(c, Args(text="- [ ] a checkbox typed into the log by hand"))
+
+        body = b.note_path(c, date.today()).read_text()
+        assert "## Todo" in body and "## Log" in body
+        assert "- shipped the invoice" in body
+
+        # the log is not ours to read: nothing under ## Log reaches the list,
+        # not even something shaped exactly like a task
+        rows = b.today_tasks(c)
+        assert [r["clean"] for r in rows] == ["a real todo"], rows
+
+
+def test_sections_do_not_bleed_into_each_other():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        b.cmd_note(c, Args(text="first note"))
+        b.cmd_add(c, Args(text="first todo", when=""))
+        b.cmd_note(c, Args(text="second note"))
+
+        lines = b.read_lines(b.note_path(c, date.today()))
+        todo_first, todo_last = b.section_bounds(lines, "## Todo")
+        log_first, log_last = b.section_bounds(lines, "## Log")
+        assert [l for l in lines[todo_first:todo_last] if l.strip()] == ["- [ ] first todo"]
+        assert [l for l in lines[log_first:log_last] if l.strip()] == ["- first note", "- second note"]
+
+
 def test_clean_text_strips_our_own_marks():
     assert b.clean_text("ship it ✅ 2026-09-16") == "ship it"
     assert b.clean_text("ship it → [[2026-09-18]]") == "ship it"

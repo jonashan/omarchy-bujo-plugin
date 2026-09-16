@@ -71,8 +71,9 @@ Panel {
   // out of the way first rather than fighting it for keyboard focus.
   function actInteractive(verb) {
     if (!bar) return
-    var args = verb === "add-interactive" ? "" : " " + (current ? current.ref : "")
-    if (verb !== "add-interactive" && !current) return
+    var refless = verb === "add-interactive" || verb === "note-interactive"
+    if (!refless && !current) return
+    var args = refless ? "" : " " + current.ref
     root.close()
     bar.run(root.exe + " " + verb + args)
   }
@@ -111,6 +112,7 @@ Panel {
         else if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
         else if (t === "a") root.actInteractive("add-interactive")
+        else if (t === "n") root.actInteractive("note-interactive")
       }
 
       Column {
@@ -229,7 +231,8 @@ Panel {
               { key: "m", what: "migrate" },
               { key: "c", what: "done" },
               { key: "d", what: "drop" },
-              { key: "a", what: "add" }
+              { key: "a", what: "add" },
+              { key: "n", what: "note" }
             ]
 
             Text {

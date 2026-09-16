@@ -63,6 +63,7 @@ First run writes `~/.config/bujo/config.toml`. The two settings that matter:
 
 ```
 bujo add "call the accountant" friday    # tomorrow, next monday, +3 days, 2026-09-22
+bujo note "shipped the invoice"          # a - bullet into today's ## Log
 bujo list                                # today plus everything dangling
 bujo list --dangling --json
 bujo done <ref>                          # [x] + ✅ today
@@ -80,16 +81,17 @@ wrong line.
 Palette entry — `~/.config/omarchy/extensions/omarchy-menu.jsonc`:
 
 ```jsonc
-"todo": {"icon":"","label":"Todo","aliases":["task","t"],"action":"bujo add-interactive"}
+"todo": {"icon":"","label":"Todo","aliases":["task","t"],"action":"bujo add-interactive"},
+"note": {"icon":"","label":"Note","aliases":["log","jot"],"action":"bujo note-interactive"}
 ```
 
 The bar widget shows today's open count, and the dangling count after it in
 the `urgent` role — the one colour bujo introduces, and only when there is
 something to decide about. Left click opens the panel, right click captures.
 
-In the panel: `j/k` move, `c` done, `d` drop, `m` migrate, `a` add, `Enter`
-opens the note in Obsidian, `Esc` closes. It reads on open and polls once a
-second while visible, so a box ticked in Obsidian shows up here.
+In the panel: `j/k` move, `c` done, `d` drop, `m` migrate, `a` add, `n` note,
+`Esc` closes. It reads on open and polls once a second while visible, so a box
+ticked in Obsidian shows up here.
 
 Statuses are drawn, not set in a font — a shared box plus one mark inside it,
 so the column reads as one family and there is no glyph roulette across Nerd
@@ -107,7 +109,10 @@ Waybar-style JSON for a plain command module:
 - **P0 · CLI** — done. Section contract, path patterns, verify-before-write.
 - **P1 · bar counts** — done, `bujo bar`.
 - **P2 · panel** — done. Quickshell bar widget plus keyboard-driven panel.
-- **P3 · quick notes** — `- ` bullets into `## Log`, same plumbing.
+- **P3 · quick notes** — done. `- ` bullets into `## Log`, same plumbing.
+
+Notes are capture-only: they carry no status and need no decision, so the
+panel does not show them. Read the day in Obsidian.
 
 Known ceiling: `m` opens a free-text prompt rather than the fixed rows
 (tomorrow / next week / pick a date) the design calls for. Upgrade when the

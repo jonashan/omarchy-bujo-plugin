@@ -31,6 +31,7 @@ DEFAULTS = {
     "vault": "~/Documents/SecondBrain",
     "path": "05. Journals/Daily/{{date:YYYY}}/{{date:MMMM}}/{{date:YYYY-MM-DD}}.md",
     "section": "## Todo",
+    "log_section": "## Log",
     "icon": "\U000f0132",
     "urgent_days": 7,
     "template": DEFAULT_TEMPLATE,
@@ -90,7 +91,8 @@ def write_default_config():
         'template_file = ""\n'
         'template = """\\\n%s"""\n'
     ) % (DEFAULTS["vault"], DEFAULTS["path"], DEFAULTS["section"],
-         DEFAULTS["icon"], DEFAULTS["urgent_days"], DEFAULT_TEMPLATE)
+         DEFAULTS["log_section"], DEFAULTS["icon"], DEFAULTS["urgent_days"],
+         DEFAULT_TEMPLATE)
     CONFIG_PATH.write_text(body, encoding="utf-8")
 
 
@@ -258,6 +260,20 @@ def ensure_section(lines, heading):
     return section_bounds(lines, heading)
 
 
+def append_to_section(cfg, d, heading, line):
+    """Insert one line at the end of a section, creating the note and the
+    section if needed. Everything bujo adds goes through here."""
+    path = ensure_note(cfg, d)
+    lines = read_lines(path)
+    first, last = ensure_section(lines, heading)
+    at = last
+    while at > first and not lines[at - 1].strip():
+        at -= 1
+    lines.insert(at, line)
+    write_lines(path, lines)
+    return path
+
+
 def ref_for(cfg, path, lineno, line):
     rel = str(path.relative_to(cfg["vault"]))
     return "%s:%d:%s" % (rel, lineno, hashlib.sha1(line.encode("utf-8")).hexdigest()[:8])
@@ -341,14 +357,7 @@ def cmd_add(cfg, args):
     d = parse_when(args.when)
     if d is None:
         sys.exit("bujo: could not read a date from %r" % args.when)
-    path = ensure_note(cfg, d)
-    lines = read_lines(path)
-    first, last = ensure_section(lines, cfg["section"])
-    at = last
-    while at > first and not lines[at - 1].strip():
-        at -= 1
-    lines.insert(at, "- [ ] %s" % args.text)
-    write_lines(path, lines)
+    append_to_section(cfg, d, cfg["section"], "- [ ] %s" % args.text)
     notify_shell()
     print("%s  %s" % (fmt_date("ddd D MMM", d), args.text))
 
@@ -360,14 +369,7 @@ def cmd_add_interactive(cfg, args):
     text, d = split_trailing_date(text.strip())
     if not text:
         return
-    path = ensure_note(cfg, d)
-    lines = read_lines(path)
-    first, last = ensure_section(lines, cfg["section"])
-    at = last
-    while at > first and not lines[at - 1].strip():
-        at -= 1
-    lines.insert(at, "- [ ] %s" % text)
-    write_lines(path, lines)
+    append_to_section(cfg, d, cfg["section"], "- [ ] %s" % text)
     notify_shell()
     when = "today" if d == date.today() else fmt_date("ddd D MMM", d)
     run_or_none(["omarchy-notification-send", "Todo → %s" % when, text])
@@ -428,16 +430,26 @@ def cmd_move(cfg, args):
     lines[i] = "%s- [>] %s → [[%s]]" % (m.group("indent"), text, stamp)
     write_lines(path, lines)
 
-    dest = ensure_note(cfg, target)
-    dlines = read_lines(dest)
-    first, last = ensure_section(dlines, cfg["section"])
-    at = last
-    while at > first and not dlines[at - 1].strip():
-        at -= 1
-    dlines.insert(at, "%s- [ ] %s" % (m.group("indent"), text))
-    write_lines(dest, dlines)
+    append_to_section(cfg, target, cfg["section"], "%s- [ ] %s" % (m.group("indent"), text))
     notify_shell()
     print("%s → %s" % (text, fmt_date("ddd D MMM", target)))
+
+
+def cmd_note(cfg, args):
+    """A plain "-" bullet into the day's log. No status, nothing to decide —
+    that is the whole difference between a note and a todo."""
+    append_to_section(cfg, date.today(), cfg["log_section"], "- %s" % args.text)
+    print(args.text)
+
+
+def cmd_note_interactive(cfg, args):
+    # No trailing-date parsing here: a note records what happened, and what
+    # happened happened today.
+    text = run_or_none(["omarchy-menu-input", "Note"])
+    if not text or not text.strip():
+        return
+    append_to_section(cfg, date.today(), cfg["log_section"], "- %s" % text.strip())
+    run_or_none(["omarchy-notification-send", "Noted", text.strip()])
 
 
 def cmd_move_interactive(cfg, args):
@@ -545,6 +557,12 @@ def main(argv=None):
     mv.add_argument("ref")
     mv.add_argument("when")
     mv.set_defaults(fn=cmd_move)
+
+    n = sub.add_parser("note", help="append a - bullet to today's log")
+    n.add_argument("text")
+    n.set_defaults(fn=cmd_note)
+
+    sub.add_parser("note-interactive", help="prompt for a note").set_defaults(fn=cmd_note_interactive)
 
     mvi = sub.add_parser("move-interactive", help="prompt for a day, then migrate")
     mvi.add_argument("ref")
