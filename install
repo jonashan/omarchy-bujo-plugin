@@ -12,4 +12,11 @@ cp "$here"/plugin/*.qml "$here"/plugin/manifest.json "$dest/"
 
 omarchy-plugin-validate "$dest"
 omarchy-plugin-enable jsc.bujo 2>/dev/null || true
+
+# The running shell keeps the QML it started with. "Local plugin changed,
+# reloading" in the log is the plugin registry, not the live widgets — copying
+# new files over them changes nothing until the shell restarts, which is a
+# tidy way to spend an afternoon testing a fix that was never loaded.
+omarchy-restart-shell
+
 echo "installed — add {\"id\": \"jsc.bujo\"} to bar.layout in ~/.config/omarchy/shell.json"
