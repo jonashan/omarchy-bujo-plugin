@@ -32,9 +32,125 @@ Panel {
 
   property date today: new Date()
 
+  property bool settingsOpen: false
+
   // A live rescan can shorten the list under the cursor between keystrokes.
   onActionableChanged: if (cursor >= actionable.length) cursor = Math.max(0, actionable.length - 1)
   onOpenedChanged: if (opened) { today = new Date(); cursor = 0; if (hostWidget) hostWidget.refresh() }
+
+  function toggleSettings() {
+    settingsOpen = !settingsOpen
+    if (settingsOpen) loadConfig()
+    else keyCatcher.forceActiveFocus()
+  }
+
+  // ---- settings. Three commands, no file: `bujo config get` fills the page,
+  //      `bujo config check` judges the draft on it, `bujo config set` is the
+  //      only way anything is written. QML never opens config.toml, so the
+  //      rules about vaults, path patterns and Templater have exactly one
+  //      home and it is the CLI.
+
+  property var cfg: ({})
+  property var cfgChecks: ({})
+
+  function parseJson(text) {
+    try {
+      return JSON.parse(String(text || "{}"))
+    } catch (e) {
+      return {}
+    }
+  }
+
+  function loadConfig() {
+    if (!cfgGet.running) cfgGet.running = true
+  }
+
+  function runCheck() {
+    if (cfgCheck.running) { checkDebounce.restart(); return }
+    cfgCheck.command = [root.exe, "config", "check", "--json"].concat(settingsView.draft)
+    cfgCheck.running = true
+  }
+
+  Process {
+    id: cfgGet
+    running: false
+    command: [root.exe, "config", "get", "--json"]
+    stdout: StdioCollector {
+      id: cfgGetOut
+      waitForEnd: true
+      onStreamFinished: root.cfg = root.parseJson(cfgGetOut.text)
+    }
+  }
+
+  Process {
+    id: cfgCheck
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: cfgCheckOut
+      waitForEnd: true
+      onStreamFinished: root.cfgChecks = root.parseJson(cfgCheckOut.text)
+    }
+  }
+
+  // A keystroke is not a reason to fork a process; a pause in typing is.
+  Timer {
+    id: checkDebounce
+    interval: 200
+    onTriggered: root.runCheck()
+  }
+
+  // Saves are queued rather than fired in parallel: `config set` is a read,
+  // one change, and a whole-file write, so two in flight would lose one.
+  property var pendingSets: []
+
+  function saveSetting(key, value) {
+    pendingSets = pendingSets.concat([[key, value]])
+    pumpSets()
+  }
+
+  function pumpSets() {
+    if (cfgSet.running || pendingSets.length === 0) return
+    var next = pendingSets[0]
+    pendingSets = pendingSets.slice(1)
+    cfgSet.command = [root.exe, "config", "set", next[0], next[1]]
+    cfgSet.running = true
+  }
+
+  // The desktop chooser is another window, so the layer-shell panel loses
+  // focus and closes the moment it appears. Reopening afterwards is why this
+  // runs as a Process rather than going out through Util.execArgv like the
+  // capture verbs: settingsOpen survives the close, so the page comes back
+  // exactly where it was, with the picked value in it.
+  function pickSetting(key) {
+    if (cfgPick.running) return
+    cfgPick.command = [root.exe, "config", "pick", key]
+    cfgPick.running = true
+  }
+
+  Process {
+    id: cfgPick
+    running: false
+    command: []
+    onExited: {
+      root.loadConfig()
+      root.open()
+    }
+  }
+
+  Process {
+    id: cfgSet
+    running: false
+    command: []
+    onExited: {
+      if (root.pendingSets.length > 0) {
+        root.pumpSets()
+      } else {
+        root.loadConfig()
+        if (root.hostWidget) root.hostWidget.refresh()
+      }
+    }
+  }
 
   // ---- colours, all palette roles
 
@@ -99,17 +215,29 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(360))
+    contentWidth: panel.fittedContentWidth(Style.space(root.settingsOpen ? 420 : 360))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
 
-      onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveCursor(dy) }
-      onCloseRequested: root.close()
-      onTabRequested: function (direction) { root.switchPanel(direction) }
+      // This catcher sees keys before the focused child does, so a settings
+      // field would otherwise never receive a letter — every one of them is
+      // already a verb down in the list.
+      blocked: root.settingsOpen && settingsView.editing
+
+      onMoveRequested: function (dx, dy) { if (!root.settingsOpen && dy !== 0) root.moveCursor(dy) }
+      onCloseRequested: if (root.settingsOpen) root.toggleSettings(); else root.close()
+      // Tab is how the bar switches panels, which is the wrong move while a
+      // form is up: hand it the first field instead.
+      onTabRequested: function (direction) {
+        if (root.settingsOpen) settingsView.focusFirst()
+        else root.switchPanel(direction)
+      }
       onTextKey: function (t) {
+        if (t === "s") { root.toggleSettings(); return }
+        if (root.settingsOpen) return
         if (t === "c") root.act("done")
         else if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
@@ -126,20 +254,34 @@ Panel {
 
         Item {
           width: parent.width
-          height: title.implicitHeight
+          height: Math.max(title.implicitHeight, settingsButton.height)
 
           Text {
             id: title
-            text: "Todo"
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.settingsOpen ? "Settings" : "Todo"
             color: root.fg
             font.family: Style.font.family
             font.pixelSize: Style.font.body
             font.bold: true
           }
 
-          Text {
+          PanelActionButton {
+            id: settingsButton
             anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: root.settingsOpen ? "󰅖" : "󰒓"
+            tooltipText: root.settingsOpen ? "Back to the list" : "Settings"
+            foreground: root.fg
+            fontFamily: Style.font.family
+            onClicked: root.toggleSettings()
+          }
+
+          Text {
+            anchors.right: settingsButton.left
+            anchors.rightMargin: Style.space(8)
             anchors.baseline: title.baseline
+            visible: !root.settingsOpen
             text: Qt.formatDate(root.today, "ddd d MMM")
             color: root.dim
             font.family: Style.font.family
@@ -149,12 +291,29 @@ Panel {
 
         PanelSeparator { width: parent.width }
 
+        // ---- settings, shown in place of the list rather than over it, so
+        //      there is never a question about which one the keys belong to.
+
+        SettingsView {
+          id: settingsView
+          width: parent.width
+          visible: root.settingsOpen
+
+          config: root.cfg
+          checks: root.cfgChecks
+
+          onEdited: checkDebounce.restart()
+          onCommitted: function (key, value) { root.saveSetting(key, value) }
+          onPickRequested: function (key) { root.pickSetting(key) }
+          onDoneEditing: keyCatcher.forceActiveFocus()
+        }
+
         // ---- today
 
         Item {
           width: parent.width
           height: todayHeader.implicitHeight
-          visible: root.todayRows.length > 0
+          visible: root.todayRows.length > 0 && !root.settingsOpen
 
           PanelSectionHeader { id: todayHeader; text: "TODAY" }
 
@@ -171,7 +330,7 @@ Panel {
 
         Column {
           width: parent.width
-          visible: root.todayRows.length > 0
+          visible: root.todayRows.length > 0 && !root.settingsOpen
 
           Repeater {
             model: root.todayRows
@@ -184,7 +343,7 @@ Panel {
         Item {
           width: parent.width
           height: lateHeader.implicitHeight
-          visible: root.lateRows.length > 0
+          visible: root.lateRows.length > 0 && !root.settingsOpen
 
           PanelSectionHeader { id: lateHeader; text: "DANGLING" }
 
@@ -201,7 +360,7 @@ Panel {
 
         Column {
           width: parent.width
-          visible: root.lateRows.length > 0
+          visible: root.lateRows.length > 0 && !root.settingsOpen
 
           Repeater {
             model: root.lateRows
@@ -214,7 +373,7 @@ Panel {
 
         Text {
           width: parent.width
-          visible: root.actionable.length === 0
+          visible: root.actionable.length === 0 && !root.settingsOpen
           text: "Nothing dangling."
           color: root.dim
           font.family: Style.font.family
@@ -223,9 +382,24 @@ Panel {
 
         PanelSeparator { width: parent.width }
 
+        // There is no Save button, so the legend has to say when a change
+        // lands. It lands when you leave the field.
+        Text {
+          width: parent.width
+          visible: root.settingsOpen
+          wrapMode: Text.Wrap
+          textFormat: Text.StyledText
+          text: "<font color='" + root.sectionColor + "'>esc</font> back · "
+            + "saved when you leave a field"
+          color: root.dim
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
         Row {
           width: parent.width
           spacing: Style.space(11)
+          visible: !root.settingsOpen
 
           Repeater {
             model: [
@@ -234,7 +408,8 @@ Panel {
               { key: "c", what: "done" },
               { key: "d", what: "drop" },
               { key: "a", what: "add" },
-              { key: "n", what: "note" }
+              { key: "n", what: "note" },
+              { key: "s", what: "settings" }
             ]
 
             Text {

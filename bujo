@@ -27,16 +27,41 @@ CONFIG_PATH = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 
 DEFAULT_TEMPLATE = "---\ntags:\n  - journal/daily\n---\n# {{date:YYYY-MM-DD}}\n\n## Todo\n"
 
+# vault and path are deliberately empty: they are the two settings only the
+# user can know, and a wrong guess that resolves is worse than a blank that
+# says so. Everything else here is a real default.
 DEFAULTS = {
-    "vault": "~/Documents/SecondBrain",
-    "path": "05. Journals/Daily/{{date:YYYY}}/{{date:MMMM}}/{{date:YYYY-MM-DD}}.md",
+    "vault": "",
+    "path": "",
     "section": "## Todo",
     "log_section": "## Log",
     "icon": "\U000f0132",
     "urgent_days": 7,
-    "template": DEFAULT_TEMPLATE,
     "template_file": "",
+    "template": DEFAULT_TEMPLATE,
 }
+
+CONFIG_HEADER = (
+    "# bujo — see README. Every {{date:FORMAT}} uses moment-style tokens\n"
+    "# (YYYY MMMM MMM MM M DD D dddd ddd) rendered from a fixed English\n"
+    "# table, never the system locale.\n"
+    "#\n"
+    "# `bujo config set <key> <value>` rewrites this file, and the settings\n"
+    "# page in the bar goes through that rather than editing TOML itself."
+)
+
+CONFIG_NOTES_VAULT = (
+    "# Your Obsidian vault, and where daily notes sit inside it. Nothing works\n"
+    "# until both are set — `bujo config check` says what is missing."
+)
+
+# Comments worth keeping in the written file, keyed by the line they precede.
+CONFIG_NOTES = {
+    "vault": CONFIG_NOTES_VAULT,
+    "template_file": "# Rendered once when a note has to be created, never read again.\n"
+                     "# template_file — vault-relative — overrides the inline template below.",
+}
+
 
 OPEN, DONE, MIGRATED, DROPPED = " ", "x", ">", "-"
 TASK_RE = re.compile(r"^(?P<indent>\s*)- \[(?P<status>.)\] (?P<text>.*)$")
@@ -65,40 +90,156 @@ TOKENS = [
 
 # --------------------------------------------------------------------- config
 
-def load_config():
+def read_config():
+    """Merged config, unexpanded and unvalidated.
+
+    The settings page has to be able to show a vault that is not there, so the
+    check that stops every other command lives in load_config, not here.
+    """
     cfg = dict(DEFAULTS)
     if CONFIG_PATH.exists():
         with CONFIG_PATH.open("rb") as fh:
             cfg.update(tomllib.load(fh))
     else:
-        write_default_config()
-    cfg["vault"] = Path(cfg["vault"]).expanduser()
-    if not cfg["vault"].is_dir():
-        sys.exit("bujo: vault not found: %s\n"
-                 "      Set `vault` (and `path`, if your daily notes are laid out\n"
-                 "      differently) in %s" % (cfg["vault"], CONFIG_PATH))
+        write_config(dict(DEFAULTS))
     return cfg
 
 
-def write_default_config():
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    body = (
-        '# bujo — see README. Every {{date:FORMAT}} uses moment-style tokens\n'
-        '# (YYYY MMMM MMM MM M DD D dddd ddd) rendered from a fixed English\n'
-        '# table, never the system locale.\n\n'
-        'vault = "%s"\n'
-        'path = "%s"\n'
-        'section = "%s"\n'
-        'icon = "%s"\n'
-        'urgent_days = %d\n\n'
-        '# Rendered once when a note has to be created. Never read again.\n'
-        '# Set template_file to a vault-relative path to use a file instead.\n'
-        'template_file = ""\n'
-        'template = """\\\n%s"""\n'
-    ) % (DEFAULTS["vault"], DEFAULTS["path"], DEFAULTS["section"],
-         DEFAULTS["log_section"], DEFAULTS["icon"], DEFAULTS["urgent_days"],
-         DEFAULT_TEMPLATE)
-    CONFIG_PATH.write_text(body, encoding="utf-8")
+def load_config():
+    cfg = read_config()
+    for name, err in (("vault", vault_error(cfg["vault"])), ("path", path_error(cfg["path"]))):
+        if err:
+            sys.exit("bujo: %s %s\n"
+                     "      Open the bar panel and press `s`, or edit %s" % (name, err, CONFIG_PATH))
+    cfg["vault"] = vault_path(cfg["vault"])
+    return cfg
+
+
+def toml_value(v):
+    """Enough TOML to write our own settings back. Anything with a newline
+    becomes a multi-line string: a template folded onto one line with \\n in
+    it is a file nobody can read, and this one is meant to be read."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    s = str(v)
+    if "\n" not in s:
+        return json.dumps(s, ensure_ascii=False)
+    body = s.replace("\\", "\\\\").replace('"""', '""\\"')
+    if body.endswith('"'):
+        body = body[:-1] + '\\"'
+    return '"""\\\n%s"""' % body
+
+
+def write_config(cfg):
+    """The one writer. The panel asks for a change and this renders the file;
+    a second TOML writer over in QML is a second set of escaping bugs."""
+    out = [CONFIG_HEADER]
+    for i, k in enumerate(list(DEFAULTS) + [k for k in cfg if k not in DEFAULTS]):
+        line = "%s = %s" % (k, toml_value(cfg[k]))
+        # A blank line only where one earns its keep: under the header, before
+        # a comment, and around a value that spans lines of its own.
+        if i == 0 or k in CONFIG_NOTES or "\n" in line:
+            out.append("")
+        if k in CONFIG_NOTES:
+            out.append(CONFIG_NOTES[k])
+        out.append(line)
+    write_lines(CONFIG_PATH, out)
+
+
+# ------------------------------------------------------------------- the rules
+#
+# Every rule the settings page shows is decided here, once. QML reads the
+# verdicts and renders them; it re-derives nothing, so there is no second
+# opinion about what a valid vault, path or template is.
+
+def vault_path(value):
+    return Path(str(value).strip()).expanduser()
+
+
+def vault_error(value):
+    """Unset is its own answer. Path("") expands to ".", which is a perfectly
+    real directory — left unguarded, an empty vault passes is_dir() and bujo
+    quietly writes todos into whatever directory it happened to run in."""
+    if not str(value).strip():
+        return "not set — point it at your Obsidian vault"
+    p = vault_path(value)
+    return "" if p.is_dir() else "not found: %s" % p
+
+
+def path_error(value):
+    if not str(value).strip():
+        return "not set — the pattern your daily notes are named by"
+    return ""
+
+
+def templater_error(text):
+    """Templater runs inside Obsidian. We only ever expand {{date:...}}."""
+    return "uses Templater <% %> syntax, which only Obsidian can render" if "<%" in text else ""
+
+
+def heading_error(value):
+    """The section contract reads to the next `## `, so the heading has to be
+    one — `# Todo` would swallow every section below it."""
+    return "" if value.startswith("## ") and value.strip() == value else \
+        "must be a level-2 heading with a name, like ## Todo"
+
+
+def effective_template(cfg, vault):
+    """(text, source, error). template_file wins whenever it is set — which is
+    exactly the shadowing the settings page has to make visible."""
+    name = str(cfg.get("template_file", "")).strip()
+    if not name:
+        return str(cfg["template"]), "inline", ""
+    src = vault / name
+    if not src.is_file():
+        return "", "file", "not found in the vault: %s" % src
+    try:
+        return src.read_text(encoding="utf-8"), "file", ""
+    except OSError as e:
+        return "", "file", "cannot be read: %s" % e.strerror
+
+
+def check_config(cfg):
+    """One verdict per settable field: {ok, note}, plus the resolved path for
+    today and which template is actually in force."""
+    vault = vault_path(cfg["vault"])
+    today = date.today()
+
+    unset = path_error(cfg["path"])
+    rel = "" if unset else render(str(cfg["path"]), today)
+    matcher, kinds = path_matcher(cfg)
+    reads_back = not unset and path_to_date(matcher, kinds, rel) == today
+
+    text, source, file_err = effective_template(cfg, vault)
+    inline_err = templater_error(str(cfg["template"]))
+    if not file_err and source == "file":
+        file_err = templater_error(text)
+
+    section_err = heading_error(str(cfg["section"])) or heading_error(str(cfg["log_section"]))
+    if not section_err and str(cfg["section"]).strip() == str(cfg["log_section"]).strip():
+        section_err = "the todo and log sections must differ"
+
+    verr = vault_error(cfg["vault"])
+    fields = {
+        "vault": {"ok": not verr, "note": verr or str(vault)},
+        "path": {"ok": reads_back, "preview": rel,
+                 "note": unset if unset else
+                         "" if reads_back else
+                         "no date reads back out of this — every note would look undated"},
+        "section": {"ok": not heading_error(str(cfg["section"])) and not section_err,
+                    "note": section_err},
+        "log_section": {"ok": not heading_error(str(cfg["log_section"])) and not section_err,
+                        "note": section_err},
+        "template_file": {"ok": not file_err,
+                          "note": file_err or ("in use — overrides the template below"
+                                               if source == "file" else "")},
+        "template": {"ok": not inline_err,
+                     "note": inline_err or ("overridden by the template file above"
+                                            if source == "file" else "")},
+    }
+    return {"ok": all(f["ok"] for f in fields.values()), "source": source, "fields": fields}
 
 
 # ----------------------------------------------------------------- date tokens
@@ -240,15 +381,13 @@ def ensure_note(cfg, d):
     path = note_path(cfg, d)
     if path.exists():
         return path
-    tpl = cfg["template"]
-    if cfg["template_file"]:
-        src = cfg["vault"] / cfg["template_file"]
-        if not src.exists():
-            sys.exit("bujo: template_file not found: %s" % src)
-        tpl = src.read_text(encoding="utf-8")
-    if "<%" in tpl:
-        sys.exit("bujo: template uses Templater syntax, which only Obsidian can render.\n"
-                 "      Point template_file at a {{date:...}} template, or use the inline one.")
+    tpl, _source, err = effective_template(cfg, cfg["vault"])
+    if err:
+        sys.exit("bujo: template_file %s" % err)
+    err = templater_error(tpl)
+    if err:
+        sys.exit("bujo: template %s.\n"
+                 "      Point template_file at a {{date:...}} template, or use the inline one." % err)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render(tpl, d), encoding="utf-8")
     return path
@@ -576,6 +715,92 @@ def cmd_path(cfg, args):
     print(note_path(cfg, parse_when(args.when)))
 
 
+# The settings page is a client of these three and nothing else. QML never
+# opens config.toml — it reads `config get`, asks `config check` whether a
+# draft holds up, and hands a change to `config set`.
+
+def setting_value(key, value):
+    if key not in DEFAULTS:
+        sys.exit("bujo: unknown setting %r (known: %s)" % (key, " ".join(sorted(DEFAULTS))))
+    if isinstance(DEFAULTS[key], int):
+        try:
+            return int(value)
+        except ValueError:
+            sys.exit("bujo: %s needs a number, got %r" % (key, value))
+    return value
+
+
+def cmd_config_get(cfg, args):
+    if args.json:
+        print(json.dumps(cfg, ensure_ascii=False))
+        return
+    for k, v in cfg.items():
+        print("%s = %s" % (k, toml_value(v)))
+
+
+def cmd_config_set(cfg, args):
+    cfg[args.key] = setting_value(args.key, args.value)
+    write_config(cfg)
+    notify_shell()
+    print("%s = %s" % (args.key, toml_value(cfg[args.key])))
+
+
+# Omarchy's own chooser, which talks to the desktop portal. Not a picker of
+# ours and not a new dependency: `omarchy-file-select` is already on PATH, and
+# a plugin that needs Omarchy 4 can say so.
+PICKERS = {
+    "vault": ["--directory", "--title", "Obsidian vault"],
+    "template_file": ["--title", "Daily note template"],
+}
+
+
+def tildify(path):
+    """~ back in, so a picked path reads like one somebody typed."""
+    try:
+        return "~/%s" % path.relative_to(Path.home())
+    except ValueError:
+        return str(path)
+
+
+def cmd_config_pick(cfg, args):
+    if args.key not in PICKERS:
+        sys.exit("bujo: nothing to pick for %r (try %s)" % (args.key, " or ".join(sorted(PICKERS))))
+    picked = run_or_none(["omarchy-file-select"] + PICKERS[args.key])
+    if not picked:
+        return   # cancelling is an answer
+    chosen = Path(picked.splitlines()[0])
+    if args.key == "template_file":
+        # The setting is vault-relative by definition, so the conversion — and
+        # the refusal when it cannot be done — belongs here, not in the dialog.
+        vault = vault_path(cfg["vault"])
+        try:
+            value = str(chosen.relative_to(vault))
+        except ValueError:
+            sys.exit("bujo: %s is outside the vault (%s)" % (chosen, vault))
+    else:
+        value = tildify(chosen)
+    cmd_config_set(cfg, Args(key=args.key, value=value))
+
+
+def cmd_config_check(cfg, args):
+    # key=value overrides so a draft can be checked before it is saved — the
+    # Templater refusal has to reach the user while they are still typing.
+    for pair in args.override:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            sys.exit("bujo: overrides look like key=value, got %r" % pair)
+        cfg[key] = setting_value(key, value)
+    result = check_config(cfg)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+        return
+    for key, field in result["fields"].items():
+        if field["note"]:
+            print("%s %s: %s" % ("ok " if field["ok"] else "!! ", key, field["note"]))
+    if not result["ok"]:
+        sys.exit(1)
+
+
 def notify_shell():
     """The bar polls slowly while its panel is shut, so a capture from the
     palette would otherwise sit unseen for up to a refresh interval. Telling
@@ -643,8 +868,31 @@ def main(argv=None):
     pa.add_argument("when", nargs="?", default="")
     pa.set_defaults(fn=cmd_path)
 
+    # raw_config: these three have to work when the vault is missing, since
+    # fixing that is what the settings page is for.
+    c = sub.add_parser("config", help="read, write and check the settings")
+    csub = c.add_subparsers(dest="action", required=True)
+
+    cg = csub.add_parser("get", help="print the effective settings")
+    cg.add_argument("--json", action="store_true")
+    cg.set_defaults(fn=cmd_config_get, raw_config=True)
+
+    cs = csub.add_parser("set", help="change one setting")
+    cs.add_argument("key")
+    cs.add_argument("value")
+    cs.set_defaults(fn=cmd_config_set, raw_config=True)
+
+    cp = csub.add_parser("pick", help="choose a vault or template file in the desktop chooser")
+    cp.add_argument("key", choices=sorted(PICKERS))
+    cp.set_defaults(fn=cmd_config_pick, raw_config=True)
+
+    cc = csub.add_parser("check", help="verdict per setting; key=value tries a draft")
+    cc.add_argument("override", nargs="*")
+    cc.add_argument("--json", action="store_true")
+    cc.set_defaults(fn=cmd_config_check, raw_config=True)
+
     args = p.parse_args(argv)
-    args.fn(load_config(), args)
+    args.fn(read_config() if getattr(args, "raw_config", False) else load_config(), args)
 
 
 if __name__ == "__main__":

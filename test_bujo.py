@@ -16,9 +16,14 @@ b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
 
 
+# vault and path ship empty, so tests that exercise notes supply their own.
+TEST_PATH = "05. Journals/Daily/{{date:YYYY}}/{{date:MMMM}}/{{date:YYYY-MM-DD}}.md"
+
+
 def cfg_for(root):
     c = dict(b.DEFAULTS)
     c["vault"] = Path(root)
+    c["path"] = TEST_PATH
     return c
 
 
@@ -239,9 +244,208 @@ def test_clean_text_strips_our_own_marks():
     assert b.clean_text("ship it") == "ship it"
 
 
+# ------------------------------------------------------------------- settings
+#
+# The panel reads these three commands and never touches config.toml, so
+# every rule it renders has to hold here first.
+
+
+def with_config(root):
+    """Point the module's config at a temp file and hand back its path."""
+    b.CONFIG_PATH = Path(root) / "bujo" / "config.toml"
+    return b.CONFIG_PATH
+
+
+def test_config_survives_a_round_trip_through_toml():
+    # A template carrying the things that break naive TOML quoting: a
+    # backslash, embedded quotes, a triple quote, and a closing quote right
+    # against the delimiter.
+    nasty = '---\naliases: ["a \\"b\\""]\npath: C:\\Users\n---\n\nsaid: """hi"""\nends: "'
+    with tempfile.TemporaryDirectory() as root:
+        with_config(root)
+        cfg = dict(b.DEFAULTS)
+        cfg["template"] = nasty
+        cfg["urgent_days"] = 3
+        b.write_config(cfg)
+        assert b.read_config() == cfg, b.CONFIG_PATH.read_text()
+
+        # and the default file is writable at all — it is what a fresh
+        # machine gets before anything else runs
+        b.CONFIG_PATH.unlink()
+        assert b.read_config() == dict(b.DEFAULTS)
+
+        # the template stays readable in the file rather than folded onto
+        # one line with \n in it
+        assert '"""' in b.CONFIG_PATH.read_text()
+
+
+def test_config_set_writes_one_key_and_refuses_a_typo():
+    with tempfile.TemporaryDirectory() as root:
+        with_config(root)
+        b.cmd_config_set(b.read_config(), Args(key="section", value="## Tasks"))
+        assert b.read_config()["section"] == "## Tasks"
+        # everything else survived the rewrite
+        assert b.read_config()["template"] == b.DEFAULTS["template"]
+
+        b.cmd_config_set(b.read_config(), Args(key="urgent_days", value="14"))
+        assert b.read_config()["urgent_days"] == 14, "ints must not land as strings"
+
+        for key, value in (("secton", "## Tasks"), ("urgent_days", "soon")):
+            try:
+                b.cmd_config_set(b.read_config(), Args(key=key, value=value))
+            except SystemExit:
+                pass
+            else:
+                assert False, "%s=%s should not be settable" % (key, value)
+
+
+def test_check_flags_a_path_no_date_reads_back_out_of():
+    c = cfg_for("/tmp/x")
+    ok = b.check_config(dict(c))
+    assert ok["fields"]["path"]["ok"]
+    assert ok["fields"]["path"]["preview"] == b.render(c["path"], date.today())
+
+    # a pattern with no date in it at all: every note would look undated, and
+    # nothing would ever show up as dangling
+    c["path"] = "05. Journals/Daily/notes.md"
+    bad = b.check_config(dict(c))
+    assert not bad["ok"] and not bad["fields"]["path"]["ok"]
+
+    # a year and a month but no day never yields a date either
+    c["path"] = "{{date:YYYY}}/{{date:MMMM}}.md"
+    assert not b.check_config(dict(c))["fields"]["path"]["ok"]
+
+
+def test_check_surfaces_templater_before_it_is_saved():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        c["template"] = "# <% tp.date.now() %>\n"
+        out = b.check_config(dict(c))
+        assert not out["ok"] and "Templater" in out["fields"]["template"]["note"]
+
+        # and the same template arriving via a file is refused the same way,
+        # because ensure_note asks the one helper both paths share
+        c["template"] = b.DEFAULTS["template"]
+        Path(root, "tpl.md").write_text("# <% tp.date.now() %>\n", encoding="utf-8")
+        c["template_file"] = "tpl.md"
+        out = b.check_config(dict(c))
+        assert not out["ok"] and "Templater" in out["fields"]["template_file"]["note"]
+        try:
+            b.ensure_note(c, date.today())
+        except SystemExit as e:
+            assert "Templater" in str(e)
+        else:
+            assert False, "a Templater template must not create a note"
+
+
+def test_check_makes_the_template_precedence_visible():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        assert b.check_config(dict(c))["source"] == "inline"
+
+        Path(root, "tpl.md").write_text("# {{date:YYYY-MM-DD}}\n", encoding="utf-8")
+        c["template_file"] = "tpl.md"
+        out = b.check_config(dict(c))
+        # both fields say which one wins — two fields silently shadowing each
+        # other is the whole failure mode here
+        assert out["ok"] and out["source"] == "file"
+        assert "overrides" in out["fields"]["template_file"]["note"]
+        assert "overridden" in out["fields"]["template"]["note"]
+
+        # and the file is what actually lands in a new note
+        b.ensure_note(c, date.today())
+        assert b.note_path(c, date.today()).read_text().startswith("# %s" % date.today().isoformat())
+
+        c["template_file"] = "gone.md"
+        assert not b.check_config(dict(c))["fields"]["template_file"]["ok"]
+
+
+def test_check_guards_the_section_contract():
+    c = cfg_for("/tmp/x")
+    # reading stops at the next "## ", so a heading that isn't one would
+    # swallow every section below it
+    for heading in ("# Todo", "### Todo", "Todo", "## Todo "):
+        bad = dict(c, section=heading)
+        assert not b.check_config(bad)["fields"]["section"]["ok"], heading
+    # one section cannot be both the todos and the log
+    same = dict(c, log_section=c["section"])
+    out = b.check_config(same)
+    assert not out["fields"]["section"]["ok"] and not out["fields"]["log_section"]["ok"]
+
+
+def test_picking_stores_the_path_the_setting_actually_wants():
+    with tempfile.TemporaryDirectory() as root:
+        with_config(root)
+        vault = Path(root) / "vault"
+        (vault / "Templates").mkdir(parents=True)
+        (vault / "Templates" / "Daily.md").write_text("# {{date:YYYY-MM-DD}}\n", encoding="utf-8")
+
+        real = b.run_or_none
+        try:
+            # cancelling the chooser is an answer, and it writes nothing
+            b.run_or_none = lambda cmd: None
+            b.cmd_config_pick(b.read_config(), Args(key="vault"))
+            assert b.read_config()["vault"] == ""
+
+            b.run_or_none = lambda cmd: str(vault)
+            b.cmd_config_pick(b.read_config(), Args(key="vault"))
+            assert b.read_config()["vault"] == str(vault)
+
+            # template_file is vault-relative by definition, so an absolute
+            # path out of the chooser has to be converted, not stored
+            b.run_or_none = lambda cmd: str(vault / "Templates" / "Daily.md")
+            b.cmd_config_pick(b.read_config(), Args(key="template_file"))
+            assert b.read_config()["template_file"] == "Templates/Daily.md"
+
+            # and one outside the vault is refused rather than stored broken
+            b.run_or_none = lambda cmd: str(Path(root) / "elsewhere.md")
+            try:
+                b.cmd_config_pick(b.read_config(), Args(key="template_file"))
+            except SystemExit as e:
+                assert "outside the vault" in str(e)
+            else:
+                assert False, "a template outside the vault must be refused"
+            assert b.read_config()["template_file"] == "Templates/Daily.md", "the refusal kept the old value"
+        finally:
+            b.run_or_none = real
+
+
+def test_tildify_keeps_a_picked_path_readable():
+    assert b.tildify(Path.home() / "Documents" / "Obsidian") == "~/Documents/Obsidian"
+    assert b.tildify(Path("/mnt/vault")) == "/mnt/vault"
+
+
+def test_check_says_where_it_looked_for_a_missing_vault():
+    out = b.check_config(dict(b.DEFAULTS, vault="~/no-such-vault"))
+    assert not out["fields"]["vault"]["ok"]
+    assert str(Path.home() / "no-such-vault") in out["fields"]["vault"]["note"]
+
+
+def test_a_fresh_install_is_unset_rather_than_pointed_somewhere():
+    # Path("") expands to ".", a perfectly real directory. Unguarded, an empty
+    # vault passes is_dir() and bujo writes todos into whatever directory it
+    # happened to run in — so "not set" has to be its own answer.
+    out = b.check_config(dict(b.DEFAULTS))
+    assert not out["ok"]
+    assert "not set" in out["fields"]["vault"]["note"]
+    assert "not set" in out["fields"]["path"]["note"]
+    assert out["fields"]["path"]["preview"] == ""
+
+    with tempfile.TemporaryDirectory() as root:
+        with_config(root)
+        try:
+            b.load_config()
+        except SystemExit as e:
+            assert "vault not set" in str(e)
+        else:
+            assert False, "every other command must refuse an unset vault"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    real_config = b.CONFIG_PATH
     for t in tests:
         t()
+        b.CONFIG_PATH = real_config   # with_config points it at a temp dir
         print("ok  %s" % t.__name__)
     print("\n%d passed" % len(tests))

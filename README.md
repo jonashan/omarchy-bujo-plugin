@@ -59,12 +59,17 @@ Then add the widget to `bar.layout.<section>` in `~/.config/omarchy/shell.json`:
 { "id": "io.github.jonashan.bujo" }
 ```
 
-First run writes `~/.config/bujo/config.toml`. The two settings that matter:
+First run writes `~/.config/bujo/config.toml`, and the panel's settings page
+edits it (or `bujo config set`). `vault` and `path` start **empty** — they are
+the two things only you can know, and a default that happens to resolve is
+worse than a blank that says "not set". Nothing else needs touching.
 
-- `path` — where daily notes live, as a pattern. One string covers core Daily
-  notes, Periodic Notes and journals users alike, so nothing has to know which
-  plugin you run. Month names render from a fixed English table, never the
-  system locale.
+- `vault` — your Obsidian vault. `bujo config pick vault` (or the folder button
+  on the settings page) opens the desktop chooser.
+- `path` — where daily notes live inside it, as a pattern. One string covers
+  core Daily notes, Periodic Notes and journals users alike, so nothing has to
+  know which plugin you run. Month names render from a fixed English table,
+  never the system locale.
 - `template` (or `template_file`) — rendered **once**, when a note has to be
   created for a future day, and never read again. Entirely yours. Templater
   `<% %>` syntax is refused rather than half-rendered, since only Obsidian can
@@ -81,6 +86,13 @@ bujo done <ref>                          # [x] + ✅ today
 bujo drop <ref>                          # [-]
 bujo move <ref> tomorrow                 # [>] here, a fresh [ ] there
 bujo bar                                 # waybar-style JSON for the bar
+
+bujo config get                          # the effective settings, --json for the panel
+bujo config set path "Journal/{{date:YYYY-MM-DD}}.md"
+bujo config check                        # a verdict per setting, before or after saving
+bujo config check "template_file=Templates/Daily.md"   # ...on a draft you have not saved
+bujo config pick vault                   # the desktop folder chooser, then save
+bujo config pick template_file           # ...and stored vault-relative
 ```
 
 All three actions toggle: `c` on a done task reopens it (and the ✅ stamp goes
@@ -106,8 +118,21 @@ the `urgent` role — the one colour bujo introduces, and only when there is
 something to decide about. Left click opens the panel, right click captures.
 
 In the panel: `j/k` move, `c` done, `d` drop, `m` migrate, `a` add, `n` note,
-`Esc` closes. It reads on open and polls once a second while visible, so a box
-ticked in Obsidian shows up here.
+`s` settings, `Esc` closes. It reads on open and polls once a second while
+visible, so a box ticked in Obsidian shows up here.
+
+The settings page — the cog, or `s` — edits the vault, the daily-note pattern,
+the two section headings and the template, with today's note resolved live
+underneath the pattern so you can see it land. A field saves when you leave
+it; `Esc` puts it back. Vault and template file have a folder button beside
+them — that is `omarchy-file-select`, Omarchy's own portal-backed chooser, so
+there is no picker here to maintain and no new dependency. The panel closes
+while the dialog is up (it is another window taking focus) and reopens on the
+same page afterwards. The panel does not parse or write `config.toml`: it
+runs `bujo config get`, `check` and `set`, so what counts as a usable vault,
+pattern or template is decided in one place and it is the CLI. That is also
+why a Templater `<% %>` template turns red while you type it rather than at
+the moment a note fails to be created.
 
 Statuses are drawn, not set in a font — a shared box plus one mark inside it,
 so the column reads as one family and there is no glyph roulette across Nerd
@@ -159,6 +184,12 @@ statically.
 - **P1 · bar counts** — done, `bujo bar`.
 - **P2 · panel** — done. Quickshell bar widget plus keyboard-driven panel.
 - **P3 · quick notes** — done. `- ` bullets into `## Log`, same plumbing.
+- **P4 · settings** — done. A page in the panel over `bujo config`.
+
+Known ceiling: if `omarchy-file-select` is missing — an Omarchy older than this
+plugin supports — the folder button does nothing rather than saying so;
+surfacing a failed helper needs an error line the panel does not have yet. Type
+the path instead.
 
 Notes are capture-only: they carry no status and need no decision, so the
 panel does not show them. Read the day in Obsidian.

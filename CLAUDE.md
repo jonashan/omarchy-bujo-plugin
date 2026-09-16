@@ -70,6 +70,31 @@ a second press. Undoing a migration also removes the copy at the target — but
 only while that copy is still open, since one already completed or edited there
 is somebody's work.
 
+**Settings are three CLI commands, not a QML TOML editor.** `config get`,
+`config check` and `config set` are the panel's whole view of
+`~/.config/bujo/config.toml` — QML never opens it. `check` reuses
+`path_matcher` / `path_to_date` and the vault and Templater guards and returns
+`{ok, note}` per field, so the settings page renders verdicts it did not
+reach; `check key=value ...` judges a draft that has not been saved, which is
+how Templater turns red while it is still being typed. `set` rewrites the
+whole file through `write_config`, so saves are queued rather than run in
+parallel — two read-modify-writes in flight lose one.
+
+**`vault` and `path` default to empty, and empty is guarded.** `Path("")`
+expands to `"."`, a real directory that passes `is_dir()` — unguarded, an unset
+vault would quietly write todos into whatever directory bujo ran in, so
+`vault_error` and `path_error` treat blank as its own answer and `load_config`
+refuses before anything resolves. Do not give either a "sensible" default:
+a wrong guess that resolves is worse than a blank that says so.
+
+**Browsing is `omarchy-file-select`, not a picker of ours.** `config pick`
+shells out to Omarchy's portal-backed chooser and converts what comes back —
+`~` put back for `vault`, vault-relative (or refused) for `template_file` —
+because the conversion is a fact about the setting, not about the dialog. The
+chooser is another window, so the layer-shell panel loses focus and closes;
+Panel.qml runs it as a `Process` and calls `open()` in `onExited`, and
+`settingsOpen` survives the close, so the page comes back where it was.
+
 Date parsing is delegated to GNU `date -d`. It handles "tomorrow", "friday",
 "+3 days"; it does not do recurrence, which is the line where Tasks-plugin `🔁`
 syntax would have to be adopted.
