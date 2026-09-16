@@ -111,6 +111,36 @@ Waybar-style JSON for a plain command module:
 { "id": "bujo", "type": "command", "exec": "bujo bar", "interval": 30 }
 ```
 
+## Keybindings
+
+Hyprland keybinds are not a plugin's to register — the plugin exposes the IPC
+route and the binding lives in your dotfiles, the same way Omarchy binds its
+own surfaces (`o.bind("SUPER + CTRL + E", "Emojis", "omarchy-shell shell toggle
+omarchy.emojis")`):
+
+```lua
+o.bind("SUPER + CTRL + J", "Todos", "omarchy-shell shell toggle jsc.bujo")
+o.bind("SUPER + CTRL + ALT + J", "Capture a todo", "bujo add-interactive")
+```
+
+`J` for journal — every other letter in the `SUPER + CTRL` row is already taken
+by an Omarchy default except G, M, U and Y.
+
+## Checks
+
+```bash
+python3 test_bujo.py
+omarchy-plugin-validate ~/.config/omarchy/plugins/jsc.bujo
+ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
+/usr/lib/qt6/bin/qmllint -I /tmp/qmlimports plugin/*.qml
+```
+
+`qmllint` needs `qs.Commons` / `qs.Ui` reachable, which the shell normally
+resolves through its own import interception — hence the symlink. What remains
+after that are warnings every first-party plugin also produces: `Loader.item`
+is typed `QObject`, so the panel methods reached through it cannot be checked
+statically.
+
 ## Built / not built
 
 - **P0 · CLI** — done. Section contract, path patterns, verify-before-write.
