@@ -465,6 +465,10 @@ Panel {
 
           Text {
             id: title
+            // Sits after the back chevron when there is one, so the glyph does
+            // not hang out of the content box and eat the panel's padding.
+            anchors.left: backChevron.visible ? backChevron.right : parent.left
+            anchors.leftMargin: backChevron.visible ? Style.space(9) : 0
             anchors.verticalCenter: parent.verticalCenter
             text: {
               if (root.settingsOpen) return "Settings"
@@ -495,8 +499,8 @@ Panel {
           // costs two glyphs. Drawn flanking the title, as the design has it.
           Text {
             id: backChevron
-            anchors.right: title.left
-            anchors.rightMargin: Style.space(7)
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(3)
             anchors.baseline: title.baseline
             visible: (root.dayMode || root.calendarOpen) && !root.settingsOpen
             text: "‹"
