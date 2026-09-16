@@ -168,6 +168,53 @@ def test_undo_never_discards_work_done_at_the_target():
         assert len(survivor) == 1 and survivor[0]["status"] == b.DONE
 
 
+def test_settling_a_migrated_task_clears_the_copy_at_the_target():
+    for verb, status in ((b.cmd_done, b.DONE), (b.cmd_drop, b.DROPPED)):
+        with tempfile.TemporaryDirectory() as root:
+            c = cfg_for(root)
+            tomorrow = date.today() + timedelta(days=1)
+            b.cmd_add(c, Args(text="call the bank", when=""))
+            b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=tomorrow.isoformat()))
+            assert len(b.tasks_in(c, b.note_path(c, tomorrow), tomorrow)) == 1
+
+            # settled at the origin, so there is nothing left waiting tomorrow
+            verb(c, Args(ref=b.today_tasks(c)[0]["ref"]))
+            assert b.today_tasks(c)[0]["status"] == status
+            assert b.tasks_in(c, b.note_path(c, tomorrow), tomorrow) == [], verb.__name__
+
+
+def test_settling_a_migration_leaves_work_already_done_at_the_target():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        tomorrow = date.today() + timedelta(days=1)
+        b.cmd_add(c, Args(text="call the bank", when=""))
+        b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=tomorrow.isoformat()))
+
+        # it got done at the target before we settled the origin
+        b.cmd_done(c, Args(ref=b.tasks_in(c, b.note_path(c, tomorrow), tomorrow)[0]["ref"]))
+        b.cmd_done(c, Args(ref=b.today_tasks(c)[0]["ref"]))
+
+        survivor = b.tasks_in(c, b.note_path(c, tomorrow), tomorrow)
+        assert len(survivor) == 1 and survivor[0]["status"] == b.DONE
+
+
+def test_settling_a_migration_into_the_same_note_keeps_its_own_line():
+    # moving to today writes the copy into the note the [>] line lives in, so
+    # removing it shifts the line the caller is about to rewrite
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        b.cmd_add(c, Args(text="one", when=""))
+        b.cmd_add(c, Args(text="two", when=""))
+        two = b.today_tasks(c)[1]["ref"]
+        b.cmd_move(c, Args(ref=two, when=today.isoformat()))
+        assert [t["clean"] for t in b.today_tasks(c)] == ["one", "two", "two"]
+
+        b.cmd_done(c, Args(ref=b.today_tasks(c)[1]["ref"]))
+        rows = b.today_tasks(c)
+        assert [(t["clean"], t["status"]) for t in rows] == [("one", b.OPEN), ("two", b.DONE)]
+
+
 def test_stale_ref_is_refused():
     with tempfile.TemporaryDirectory() as root:
         c = cfg_for(root)

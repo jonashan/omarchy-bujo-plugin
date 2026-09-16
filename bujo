@@ -546,11 +546,17 @@ def cmd_done(cfg, args):
     text = clean_text(m.group("text"))
     if m.group("status") == DONE:
         lines[i] = "%s- [ ] %s" % (m.group("indent"), text)
+        target, cleared = None, False
     else:
+        # Ticking a task you had deferred means it is finished, not that it is
+        # still waiting on the day you sent it to.
+        i, target, cleared = settle_migration(cfg, path, lines, i, m)
         lines[i] = "%s- [x] %s ✅ %s" % (m.group("indent"), text, date.today().isoformat())
     write_lines(path, lines)
     notify_shell()
     print(lines[i].strip())
+    if cleared:
+        print("cleared the copy on %s" % fmt_date("ddd D MMM", target))
 
 
 def cmd_drop(cfg, args):
@@ -559,10 +565,14 @@ def cmd_drop(cfg, args):
     if not m:
         sys.exit("bujo: not a task line")
     status = OPEN if m.group("status") == DROPPED else DROPPED
+    # Same rule as done: dropping a migrated task settles it at the target too.
+    i, target, cleared = settle_migration(cfg, path, lines, i, m)
     lines[i] = "%s- [%s] %s" % (m.group("indent"), status, clean_text(m.group("text")))
     write_lines(path, lines)
     notify_shell()
     print(lines[i].strip())
+    if cleared:
+        print("cleared the copy on %s" % fmt_date("ddd D MMM", target))
 
 
 def remove_open_copy(lines, heading, text, skip=-1):
@@ -582,29 +592,59 @@ def remove_open_copy(lines, heading, text, skip=-1):
     return -1
 
 
-def undo_move(cfg, path, lines, i, m):
-    text = clean_text(m.group("text"))
-    found = MOVED_TARGET_RE.search(m.group("text"))
-    if not found:
-        sys.exit("bujo: that line records no migration target")
-    target = date.fromisoformat(found.group(1))
-    tpath = note_path(cfg, target)
+def migration_target(text):
+    found = MOVED_TARGET_RE.search(text)
+    return date.fromisoformat(found.group(1)) if found else None
 
-    removed = -1
+
+def clear_copy_at_target(cfg, path, lines, i, text, target):
+    """Drop the still-open copy a migration left at its target.
+
+    Returns (index, cleared) — deleting a line above the one we are working on
+    shifts it, and the caller is about to rewrite that line by index.
+
+    Settling a task settles it everywhere: whether it was done, dropped or
+    taken back, the copy waiting at the target is work that no longer needs
+    doing. One already completed or edited there is somebody else's work and
+    is left alone, which is remove_open_copy's rule, not ours.
+    """
+    tpath = note_path(cfg, target)
     if tpath == path:
         removed = remove_open_copy(lines, cfg["section"], text, skip=i)
         if 0 <= removed < i:
             i -= 1
-    elif tpath.exists():
+        return i, removed >= 0
+    if tpath.exists():
         tlines = read_lines(tpath)
         removed = remove_open_copy(tlines, cfg["section"], text)
         if removed >= 0:
             write_lines(tpath, tlines)
+            return i, True
+    return i, False
+
+
+def settle_migration(cfg, path, lines, i, m):
+    """(index, target, cleared) for a line that may record a migration."""
+    if m.group("status") != MIGRATED:
+        return i, None, False
+    target = migration_target(m.group("text"))
+    if target is None:
+        return i, None, False
+    i, cleared = clear_copy_at_target(cfg, path, lines, i, clean_text(m.group("text")), target)
+    return i, target, cleared
+
+
+def undo_move(cfg, path, lines, i, m):
+    text = clean_text(m.group("text"))
+    target = migration_target(m.group("text"))
+    if target is None:
+        sys.exit("bujo: that line records no migration target")
+    i, removed = clear_copy_at_target(cfg, path, lines, i, text, target)
 
     lines[i] = "%s- [ ] %s" % (m.group("indent"), text)
     write_lines(path, lines)
     notify_shell()
-    if removed >= 0:
+    if removed:
         print("%s ← back from %s" % (text, fmt_date("ddd D MMM", target)))
     else:
         print("%s reopened — the copy on %s was already worked on, left alone"

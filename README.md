@@ -97,8 +97,13 @@ bujo config pick template_file           # ...and stored vault-relative
 
 All three actions toggle: `x` on a done task reopens it (and the ✅ stamp goes
 with it), `d` on a dropped one revives it, and `m` on a migrated one brings it
-back — removing the copy at the target, unless that copy has already been
-completed or edited, in which case it is left alone and you are told.
+back.
+
+Settling a migrated task settles it everywhere. Ticking or dropping a `[>]`
+line — or taking it back with `m` — clears the copy waiting at the target,
+because a task you have finished is not still owed on Thursday. A copy that has
+already been completed or edited there is somebody's work: it is left alone,
+and you are told.
 
 A `ref` is `path:line:hash`. The hash is checked before every write, so a task
 that Obsidian edited under a live panel is refused rather than acted on at the

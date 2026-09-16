@@ -66,9 +66,15 @@ watch on a file breaks when that file is replaced by `rename()`, which is
 exactly what the atomic writes do.
 
 **Toggles, not one-way transitions.** `done`, `drop` and `move` all reverse on
-a second press. Undoing a migration also removes the copy at the target — but
-only while that copy is still open, since one already completed or edited there
-is somebody's work.
+a second press.
+
+**Settling a migration settles it at the target.** `done`, `drop` and undoing a
+move all route through `clear_copy_at_target`, which removes the copy the
+migration left — but only while that copy is still open, since one already
+completed or edited there is somebody's work. It returns the index to carry on
+with, because a target that resolves to the same note deletes a line above the
+one the caller is about to rewrite. Any new verb that settles a `[>]` line has
+to go through it, or it leaves an orphan open task on a future day.
 
 **Settings are three CLI commands, not a QML TOML editor.** `config get`,
 `config check` and `config set` are the panel's whole view of
