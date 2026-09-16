@@ -72,6 +72,11 @@ bujo move <ref> tomorrow                 # [>] here, a fresh [ ] there
 bujo bar                                 # waybar-style JSON for the bar
 ```
 
+All three actions toggle: `c` on a done task reopens it (and the ✅ stamp goes
+with it), `d` on a dropped one revives it, and `m` on a migrated one brings it
+back — removing the copy at the target, unless that copy has already been
+completed or edited, in which case it is left alone and you are told.
+
 A `ref` is `path:line:hash`. The hash is checked before every write, so a task
 that Obsidian edited under a live panel is refused rather than acted on at the
 wrong line.

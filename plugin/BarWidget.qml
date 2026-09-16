@@ -130,7 +130,7 @@ BarWidget {
       : -1
 
     onPressed: function (b) {
-      if (b === Qt.RightButton) root.bar.run(root.exe + " add-interactive")
+      if (b === Qt.RightButton) Util.execArgv([root.exe, "add-interactive"])
       else root.togglePanel()
     }
 

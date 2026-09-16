@@ -69,13 +69,16 @@ Panel {
 
   // Interactive verbs summon their own Quickshell prompt, so this panel gets
   // out of the way first rather than fighting it for keyboard focus.
+  //
+  // execArgv, not bar.run: run() hands the string to `bash -lc`, and a ref
+  // carries the note path — "05. Journals/…" splits at the space and the verb
+  // gets two arguments it cannot use.
   function actInteractive(verb) {
-    if (!bar) return
     var refless = verb === "add-interactive" || verb === "note-interactive"
     if (!refless && !current) return
-    var args = refless ? "" : " " + current.ref
+    var argv = refless ? [root.exe, verb] : [root.exe, verb, current.ref]
     root.close()
-    bar.run(root.exe + " " + verb + args)
+    Util.execArgv(argv)
   }
 
   function label(row) {

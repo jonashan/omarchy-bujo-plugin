@@ -43,6 +43,7 @@ TASK_RE = re.compile(r"^(?P<indent>\s*)- \[(?P<status>.)\] (?P<text>.*)$")
 DATE_HOLE_RE = re.compile(r"\{\{date:([^}]*)\}\}")
 DONE_STAMP_RE = re.compile(r"\s*✅\s*\d{4}-\d{2}-\d{2}\s*$")
 MOVED_TO_RE = re.compile(r"\s*→\s*\[\[[^\]]+\]\]\s*$")
+MOVED_TARGET_RE = re.compile(r"→\s*\[\[(\d{4}-\d{2}-\d{2})\]\]")
 
 MONTHS = ["January", "February", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
@@ -393,12 +394,17 @@ def split_trailing_date(text, today=None):
 
 
 def cmd_done(cfg, args):
+    """Toggle. Pressing c twice is how you undo a mis-hit, and clean_text
+    drops the ✅ stamp on the way back out."""
     path, lines, i = resolve_ref(cfg, args.ref)
     m = TASK_RE.match(lines[i])
     if not m:
         sys.exit("bujo: not a task line")
     text = clean_text(m.group("text"))
-    lines[i] = "%s- [x] %s ✅ %s" % (m.group("indent"), text, date.today().isoformat())
+    if m.group("status") == DONE:
+        lines[i] = "%s- [ ] %s" % (m.group("indent"), text)
+    else:
+        lines[i] = "%s- [x] %s ✅ %s" % (m.group("indent"), text, date.today().isoformat())
     write_lines(path, lines)
     notify_shell()
     print(lines[i].strip())
@@ -409,20 +415,75 @@ def cmd_drop(cfg, args):
     m = TASK_RE.match(lines[i])
     if not m:
         sys.exit("bujo: not a task line")
-    lines[i] = "%s- [-] %s" % (m.group("indent"), clean_text(m.group("text")))
+    status = OPEN if m.group("status") == DROPPED else DROPPED
+    lines[i] = "%s- [%s] %s" % (m.group("indent"), status, clean_text(m.group("text")))
     write_lines(path, lines)
     notify_shell()
     print(lines[i].strip())
 
 
+def remove_open_copy(lines, heading, text, skip=-1):
+    """Delete the first still-open task matching `text`. Returns its index, or
+    -1 when there is nothing safe to remove — a copy already completed or
+    edited at the target is somebody's work, not ours to throw away."""
+    bounds = section_bounds(lines, heading)
+    if bounds is None:
+        return -1
+    for j in range(bounds[0], bounds[1]):
+        if j == skip:
+            continue
+        m = TASK_RE.match(lines[j])
+        if m and m.group("status") == OPEN and clean_text(m.group("text")) == text:
+            del lines[j]
+            return j
+    return -1
+
+
+def undo_move(cfg, path, lines, i, m):
+    text = clean_text(m.group("text"))
+    found = MOVED_TARGET_RE.search(m.group("text"))
+    if not found:
+        sys.exit("bujo: that line records no migration target")
+    target = date.fromisoformat(found.group(1))
+    tpath = note_path(cfg, target)
+
+    removed = -1
+    if tpath == path:
+        removed = remove_open_copy(lines, cfg["section"], text, skip=i)
+        if 0 <= removed < i:
+            i -= 1
+    elif tpath.exists():
+        tlines = read_lines(tpath)
+        removed = remove_open_copy(tlines, cfg["section"], text)
+        if removed >= 0:
+            write_lines(tpath, tlines)
+
+    lines[i] = "%s- [ ] %s" % (m.group("indent"), text)
+    write_lines(path, lines)
+    notify_shell()
+    if removed >= 0:
+        print("%s ← back from %s" % (text, fmt_date("ddd D MMM", target)))
+    else:
+        print("%s reopened — the copy on %s was already worked on, left alone"
+              % (text, fmt_date("ddd D MMM", target)))
+
+
 def cmd_move(cfg, args):
-    target = parse_when(args.when)
-    if target is None:
-        sys.exit("bujo: could not read a date from %r" % args.when)
     path, lines, i = resolve_ref(cfg, args.ref)
     m = TASK_RE.match(lines[i])
     if not m:
         sys.exit("bujo: not a task line")
+
+    # m on an already-migrated task takes it back rather than asking where to
+    # send it again.
+    if m.group("status") == MIGRATED and not args.when:
+        return undo_move(cfg, path, lines, i, m)
+    if not args.when:
+        sys.exit("bujo: move needs a day")
+
+    target = parse_when(args.when)
+    if target is None:
+        sys.exit("bujo: could not read a date from %r" % args.when)
     text = clean_text(m.group("text"))
     stamp = fmt_date("YYYY-MM-DD", target)
 
@@ -456,8 +517,12 @@ def cmd_move_interactive(cfg, args):
     """Reuse the capture prompt rather than build a picker inside the panel.
     ponytail: free-text prompt; fixed rows (tomorrow/next week/pick) if the
     common cases turn out to be worth a keystroke each."""
+    path, lines, i = resolve_ref(cfg, args.ref)
+    m = TASK_RE.match(lines[i])
+    if m and m.group("status") == MIGRATED:
+        return cmd_move(cfg, Args(ref=args.ref, when=""))   # undo, no prompt
     when = run_or_none(["omarchy-menu-input", "Move to"])
-    if not when:
+    if not when or not when.strip():
         return
     cmd_move(cfg, Args(ref=args.ref, when=when.strip()))
 
@@ -555,7 +620,7 @@ def main(argv=None):
 
     mv = sub.add_parser("move", help="migrate to another day")
     mv.add_argument("ref")
-    mv.add_argument("when")
+    mv.add_argument("when", nargs="?", default="")
     mv.set_defaults(fn=cmd_move)
 
     n = sub.add_parser("note", help="append a - bullet to today's log")

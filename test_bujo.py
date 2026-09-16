@@ -109,6 +109,60 @@ def test_add_done_drop_move_round_trip():
         assert b.tasks_in(c, b.note_path(c, tomorrow), tomorrow)[0]["status"] == b.DROPPED
 
 
+def test_every_action_toggles_back():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        b.cmd_add(c, Args(text="a task", when=""))
+
+        ref = lambda: b.today_tasks(c)[0]["ref"]
+        b.cmd_done(c, Args(ref=ref()))
+        assert b.today_tasks(c)[0]["status"] == b.DONE
+        b.cmd_done(c, Args(ref=ref()))
+        row = b.today_tasks(c)[0]
+        # back to open, and the done stamp went with it
+        assert row["status"] == b.OPEN and row["text"] == "a task"
+
+        b.cmd_drop(c, Args(ref=ref()))
+        assert b.today_tasks(c)[0]["status"] == b.DROPPED
+        b.cmd_drop(c, Args(ref=ref()))
+        assert b.today_tasks(c)[0]["status"] == b.OPEN
+
+
+def test_undoing_a_migration_takes_the_copy_back():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        friday = today + timedelta(days=3)
+        b.cmd_add(c, Args(text="a task", when=""))
+
+        b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=friday.isoformat()))
+        assert b.today_tasks(c)[0]["status"] == b.MIGRATED
+        assert len(b.tasks_in(c, b.note_path(c, friday), friday)) == 1
+
+        # m again, with no day, takes it back
+        b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=""))
+        row = b.today_tasks(c)[0]
+        assert row["status"] == b.OPEN and row["text"] == "a task"
+        assert b.tasks_in(c, b.note_path(c, friday), friday) == []
+
+
+def test_undo_never_discards_work_done_at_the_target():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        friday = today + timedelta(days=3)
+        b.cmd_add(c, Args(text="a task", when=""))
+        b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=friday.isoformat()))
+
+        # the copy gets completed at the target before we change our mind
+        b.cmd_done(c, Args(ref=b.tasks_in(c, b.note_path(c, friday), friday)[0]["ref"]))
+        b.cmd_move(c, Args(ref=b.today_tasks(c)[0]["ref"], when=""))
+
+        assert b.today_tasks(c)[0]["status"] == b.OPEN
+        survivor = b.tasks_in(c, b.note_path(c, friday), friday)
+        assert len(survivor) == 1 and survivor[0]["status"] == b.DONE
+
+
 def test_stale_ref_is_refused():
     with tempfile.TemporaryDirectory() as root:
         c = cfg_for(root)
