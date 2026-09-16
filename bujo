@@ -349,6 +349,7 @@ def cmd_add(cfg, args):
         at -= 1
     lines.insert(at, "- [ ] %s" % args.text)
     write_lines(path, lines)
+    notify_shell()
     print("%s  %s" % (fmt_date("ddd D MMM", d), args.text))
 
 
@@ -367,6 +368,7 @@ def cmd_add_interactive(cfg, args):
         at -= 1
     lines.insert(at, "- [ ] %s" % text)
     write_lines(path, lines)
+    notify_shell()
     when = "today" if d == date.today() else fmt_date("ddd D MMM", d)
     run_or_none(["omarchy-notification-send", "Todo → %s" % when, text])
 
@@ -396,6 +398,7 @@ def cmd_done(cfg, args):
     text = clean_text(m.group("text"))
     lines[i] = "%s- [x] %s ✅ %s" % (m.group("indent"), text, date.today().isoformat())
     write_lines(path, lines)
+    notify_shell()
     print(lines[i].strip())
 
 
@@ -406,6 +409,7 @@ def cmd_drop(cfg, args):
         sys.exit("bujo: not a task line")
     lines[i] = "%s- [-] %s" % (m.group("indent"), clean_text(m.group("text")))
     write_lines(path, lines)
+    notify_shell()
     print(lines[i].strip())
 
 
@@ -432,6 +436,7 @@ def cmd_move(cfg, args):
         at -= 1
     dlines.insert(at, "%s- [ ] %s" % (m.group("indent"), text))
     write_lines(dest, dlines)
+    notify_shell()
     print("%s → %s" % (text, fmt_date("ddd D MMM", target)))
 
 
@@ -443,15 +448,6 @@ def cmd_move_interactive(cfg, args):
     if not when:
         return
     cmd_move(cfg, Args(ref=args.ref, when=when.strip()))
-
-
-def cmd_open(cfg, args):
-    """Hand the whole note to Obsidian — bujo only ever renders one section."""
-    import urllib.parse
-    rel = args.ref.rsplit(":", 2)[0]
-    path = cfg["vault"] / rel
-    subprocess.Popen(["xdg-open", "obsidian://open?path=" + urllib.parse.quote(str(path))],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class Args:
@@ -499,6 +495,19 @@ def cmd_path(cfg, args):
     print(note_path(cfg, parse_when(args.when)))
 
 
+def notify_shell():
+    """The bar polls slowly while its panel is shut, so a capture from the
+    palette would otherwise sit unseen for up to a refresh interval. Telling
+    the shell directly beats polling harder, and covers every entry point —
+    palette, panel and terminal alike. Best-effort: -q keeps this silent when
+    no shell is running."""
+    try:
+        subprocess.run(["omarchy-shell", "-q", "jsc.bujo", "refresh"],
+                       capture_output=True, timeout=2)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
 def run_or_none(cmd):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True)
@@ -540,10 +549,6 @@ def main(argv=None):
     mvi = sub.add_parser("move-interactive", help="prompt for a day, then migrate")
     mvi.add_argument("ref")
     mvi.set_defaults(fn=cmd_move_interactive)
-
-    op = sub.add_parser("open", help="open the note holding a task in Obsidian")
-    op.add_argument("ref")
-    op.set_defaults(fn=cmd_open)
 
     sub.add_parser("bar", help="waybar-style JSON for the omarchy bar").set_defaults(fn=cmd_bar)
 

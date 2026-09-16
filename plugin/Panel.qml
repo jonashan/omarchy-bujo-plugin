@@ -6,9 +6,10 @@ import qs.Ui
 
 // Today, then everything still dangling — and a decision for each.
 //
-// The panel renders one section of a daily note and nothing else. Anything
-// that needs the whole note (frontmatter, journal prompts, links) is one
-// Enter away in Obsidian. BarWidget.qml owns the data and the refresh.
+// The panel renders one section of a daily note and nothing else; the whole
+// note stays Obsidian's job. BarWidget.qml owns the data and the refresh —
+// and `bujo` pings the shell over IPC after every write, so a capture from
+// the palette lands here without waiting for a poll.
 Panel {
   id: root
   moduleName: "jsc.bujo"
@@ -105,7 +106,6 @@ Panel {
       onMoveRequested: function (dx, dy) { if (dy !== 0) root.moveCursor(dy) }
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
-      onActivateRequested: root.actInteractive("open")
       onTextKey: function (t) {
         if (t === "c") root.act("done")
         else if (t === "d") root.act("drop")
@@ -229,8 +229,7 @@ Panel {
               { key: "m", what: "migrate" },
               { key: "c", what: "done" },
               { key: "d", what: "drop" },
-              { key: "a", what: "add" },
-              { key: "⏎", what: "open" }
+              { key: "a", what: "add" }
             ]
 
             Text {
