@@ -119,33 +119,45 @@ BarWidget {
     horizontalMargin: 7
     verticalPadding: 8.75
 
+    // The button measures itself from its label, and ours is empty — without
+    // this the slot reports a width the counts don't fit in and they paint
+    // over the neighbouring widget.
+    fixedWidth: root.vertical
+      ? -1
+      : Math.round(counts.implicitWidth + button.scaledHorizontalMargin * 2)
+    fixedHeight: root.vertical
+      ? Math.round(counts.implicitHeight + button.scaledVerticalPadding * 2)
+      : -1
+
     onPressed: function (b) {
       if (b === Qt.RightButton) root.bar.run(root.exe + " add-interactive")
       else root.togglePanel()
     }
 
-    Row {
+    Grid {
+      id: counts
       anchors.centerIn: parent
-      spacing: Style.space(5)
+      columns: root.vertical ? 1 : 5
+      horizontalItemAlignment: Grid.AlignHCenter
+      verticalItemAlignment: Grid.AlignVCenter
+      spacing: Style.space(root.vertical ? 2 : 5)
 
       StatusMark {
-        anchors.verticalCenter: parent.verticalCenter
         status: "x"
         size: Math.round(button.fontSize * 1.05)
         stroke: button.foreground
       }
 
       Text {
-        anchors.verticalCenter: parent.verticalCenter
         text: root.openToday.length
         color: root.openToday.length > 0 ? button.foreground : Util.alpha(button.foreground, 0.45)
         font.family: button.fontFamily
         font.pixelSize: button.fontSize
       }
 
+      // A separator only makes sense along a row.
       Text {
-        anchors.verticalCenter: parent.verticalCenter
-        visible: root.hasDebt
+        visible: root.hasDebt && !root.vertical
         text: "·"
         color: Util.alpha(button.foreground, 0.4)
         font.family: button.fontFamily
@@ -155,7 +167,6 @@ BarWidget {
       // The one colour bujo introduces, and only when there is something to
       // decide about. A clear day never shows red.
       Text {
-        anchors.verticalCenter: parent.verticalCenter
         visible: root.hasDebt
         text: root.late.length
         color: Color.urgent

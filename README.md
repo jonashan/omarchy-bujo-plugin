@@ -36,8 +36,11 @@ until you make a decision about it.
 Symlinks the CLI onto `PATH` and copies the plugin into
 `~/.config/omarchy/plugins/jsc.bujo`. The QML is copied rather than linked
 because `omarchy-plugin-validate` refuses symlinks inside a plugin folder, so
-re-run `./install` after editing the plugin, then `omarchy-restart-shell`.
-(Not `omarchy-refresh-shell` — that resets `shell.json` to Omarchy defaults.)
+re-run `./install` after editing the plugin.
+
+No restart needed while iterating — the shell watches local plugins and
+reloads them on change. If you do need one it is `omarchy-restart-shell`,
+never `omarchy-refresh-shell`, which resets `shell.json` to Omarchy defaults.
 
 Then add the widget to `bar.layout.<section>` in `~/.config/omarchy/shell.json`:
 
