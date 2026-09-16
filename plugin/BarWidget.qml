@@ -12,7 +12,7 @@ import qs.Ui
 // writes do.
 BarWidget {
   id: root
-  moduleName: "jsc.bujo"
+  moduleName: "io.github.jonashan.bujo"
 
   readonly property string exe: setting("command", "bujo")
   readonly property int refreshSeconds: Math.max(5, setting("refreshSeconds", 30))
@@ -99,7 +99,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "jsc.bujo"
+    target: "io.github.jonashan.bujo"
 
     function open(): void { root.open() }
     function close(): void { root.close() }

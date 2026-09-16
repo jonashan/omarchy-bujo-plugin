@@ -34,7 +34,7 @@ until you make a decision about it.
 ```
 
 Symlinks the CLI onto `PATH` and copies the plugin into
-`~/.config/omarchy/plugins/jsc.bujo`. The QML is copied rather than linked
+`~/.config/omarchy/plugins/io.github.jonashan.bujo`. The QML is copied rather than linked
 because `omarchy-plugin-validate` refuses symlinks inside a plugin folder, so
 re-run `./install` after editing the plugin.
 
@@ -47,7 +47,7 @@ nothing changes until a restart. (It is `omarchy-restart-shell`, never
 Then add the widget to `bar.layout.<section>` in `~/.config/omarchy/shell.json`:
 
 ```json
-{ "id": "jsc.bujo" }
+{ "id": "io.github.jonashan.bujo" }
 ```
 
 First run writes `~/.config/bujo/config.toml`. The two settings that matter:
@@ -119,18 +119,21 @@ own surfaces (`o.bind("SUPER + CTRL + E", "Emojis", "omarchy-shell shell toggle
 omarchy.emojis")`):
 
 ```lua
-o.bind("SUPER + CTRL + J", "Todos", "omarchy-shell shell toggle jsc.bujo")
+o.bind("SUPER + CTRL + J", "Todos", "omarchy-shell shell toggle io.github.jonashan.bujo")
 o.bind("SUPER + CTRL + ALT + J", "Capture a todo", "bujo add-interactive")
+o.bind("SUPER + CTRL + SHIFT + J", "Jot a note", "bujo note-interactive")
 ```
 
-`J` for journal — every other letter in the `SUPER + CTRL` row is already taken
-by an Omarchy default except G, M, U and Y.
+One letter, three surfaces: `J` opens the panel, `+ALT` captures a todo,
+`+SHIFT` jots a note. `J` for journal — every other letter in the `SUPER +
+CTRL` row is already taken by an Omarchy default except G, M, U and Y, while
+the whole `SUPER + CTRL + SHIFT` row is free.
 
 ## Checks
 
 ```bash
 python3 test_bujo.py
-omarchy-plugin-validate ~/.config/omarchy/plugins/jsc.bujo
+omarchy-plugin-validate ~/.config/omarchy/plugins/io.github.jonashan.bujo
 ln -sfn /usr/share/omarchy/shell /tmp/qmlimports/qs
 /usr/lib/qt6/bin/qmllint -I /tmp/qmlimports plugin/*.qml
 ```

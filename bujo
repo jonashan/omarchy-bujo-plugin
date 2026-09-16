@@ -579,7 +579,7 @@ def notify_shell():
     palette, panel and terminal alike. Best-effort: -q keeps this silent when
     no shell is running."""
     try:
-        subprocess.run(["omarchy-shell", "-q", "jsc.bujo", "refresh"],
+        subprocess.run(["omarchy-shell", "-q", "io.github.jonashan.bujo", "refresh"],
                        capture_output=True, timeout=2)
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass

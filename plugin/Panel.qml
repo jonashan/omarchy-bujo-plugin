@@ -11,8 +11,8 @@ import qs.Ui
 // the palette lands here without waiting for a poll.
 Panel {
   id: root
-  moduleName: "jsc.bujo"
-  ipcTarget: "jsc.bujo"
+  moduleName: "io.github.jonashan.bujo"
+  ipcTarget: "io.github.jonashan.bujo"
   manageIpc: false
 
   property var anchorItem: null

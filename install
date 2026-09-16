@@ -4,14 +4,14 @@
 # symlinks inside a plugin folder — so the QML is copied, not linked.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dest="$HOME/.config/omarchy/plugins/jsc.bujo"
+dest="$HOME/.config/omarchy/plugins/io.github.jonashan.bujo"
 
 mkdir -p "$HOME/.local/bin" "$dest"
 ln -sfn "$here/bujo" "$HOME/.local/bin/bujo"
 cp "$here"/plugin/*.qml "$here"/plugin/manifest.json "$dest/"
 
 omarchy-plugin-validate "$dest"
-omarchy-plugin-enable jsc.bujo 2>/dev/null || true
+omarchy-plugin-enable io.github.jonashan.bujo 2>/dev/null || true
 
 # The running shell keeps the QML it started with. "Local plugin changed,
 # reloading" in the log is the plugin registry, not the live widgets — copying
@@ -19,4 +19,4 @@ omarchy-plugin-enable jsc.bujo 2>/dev/null || true
 # tidy way to spend an afternoon testing a fix that was never loaded.
 omarchy-restart-shell
 
-echo "installed — add {\"id\": \"jsc.bujo\"} to bar.layout in ~/.config/omarchy/shell.json"
+echo "installed — add {\"id\": \"io.github.jonashan.bujo\"} to bar.layout in ~/.config/omarchy/shell.json"
