@@ -592,6 +592,15 @@ def test_tildify_keeps_a_picked_path_readable():
     assert b.tildify(Path("/mnt/vault")) == "/mnt/vault"
 
 
+def test_open_target_survives_a_vault_path_with_spaces():
+    note = Path("/home/me/Vault/05. Journals/2026-09-18.md")
+    # a raw space truncates the URI where Obsidian reads it
+    assert b.open_target(note, "obsidian.desktop") == \
+        "obsidian://open?path=%2Fhome%2Fme%2FVault%2F05.%20Journals%2F2026-09-18.md"
+    # nothing registered for the scheme means no Obsidian: hand over the file
+    assert b.open_target(note, "") == str(note)
+
+
 def test_check_says_where_it_looked_for_a_missing_vault():
     out = b.check_config(dict(b.DEFAULTS, vault="~/no-such-vault"))
     assert not out["fields"]["vault"]["ok"]

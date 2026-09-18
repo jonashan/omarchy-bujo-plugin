@@ -89,6 +89,7 @@ bujo edit <ref> "call the accountant"    # rewrite the words; a note the same wa
 bujo log --day yesterday                 # read a day's log back; `note` writes one
 bujo days 2026-09 --json                 # per-day counts for a month, one walk
 bujo bar                                 # waybar-style JSON for the bar
+bujo open yesterday                      # the day's note in Obsidian; today by default
 
 bujo config get                          # the effective settings, --json for the panel
 bujo config set path "Journal/{{date:YYYY-MM-DD}}.md"
@@ -138,8 +139,9 @@ the `urgent` role — the one colour bujo introduces, and only when there is
 something to decide about. Left click opens the panel, right click captures.
 
 In the panel: `j/k` move, `x` or `Enter` done, `d` drop, `m` migrate, `e` edit,
-`a` add, `n` note, `s` settings, `Esc` closes. It reads on open and polls once a
-second while visible, so a box ticked in Obsidian shows up here.
+`a` add, `n` note, `o` the day's note in Obsidian, `s` settings, `Esc` closes. It
+reads on open and polls once a second while visible, so a box ticked in Obsidian
+shows up here.
 
 Today's list shows the day's log under it — record rather than decision, so
 those rows carry no status mark, and the empty mark column is what says so.
@@ -198,6 +200,7 @@ omarchy.emojis")`):
 o.bind("SUPER + CTRL + J", "Todos", "omarchy-shell shell toggle io.github.jonashan.bujo")
 o.bind("SUPER + CTRL + ALT + J", "Capture a todo", "bujo add-interactive")
 o.bind("SUPER + CTRL + SHIFT + J", "Jot a note", "bujo note-interactive")
+o.bind("SUPER + CTRL + SHIFT + O", "Today's note", "bujo open")
 ```
 
 One letter, three surfaces: `J` opens the panel, `+ALT` captures a todo,
@@ -231,6 +234,15 @@ statically.
   both views show the log beside the todos.
 - **P6 · editing** — done. `e` on any row, todo or note, through the same
   verified-ref write as every other verb.
+- **P7 · open in Obsidian** — done. `o` in the panel, `bujo open [day]` from
+  anywhere. It creates the note from your template first, so the URI never
+  lands on a file that is not there yet.
+
+`e` fixes the words; `o` is for everything a line cannot hold. `bujo open` hands
+`obsidian://open?path=…` to `xdg-open`, so the note opens in its vault rather
+than as a loose file. If nothing is registered for the scheme — no Obsidian —
+the path itself goes to `xdg-open`, which is `omawrite` or whatever else answers
+for markdown on your machine.
 
 Known ceiling: if `omarchy-file-select` is missing — an Omarchy older than this
 plugin supports — the folder button does nothing rather than saying so;

@@ -143,6 +143,16 @@ does *not* go through `clear_copy_at_target`: editing a `[>]` line breaks the
 text tying it to its copy, and "a copy that no longer matches is somebody's
 work, left alone" is already `remove_open_copy`'s rule.
 
+**`open` asks the desktop which app, and never a setting.** `obsidian://open?path=`
+opens the note *inside* its vault, with the links and the daily-note plumbing;
+handing `xdg-open` the plain path opens a loose copy of the file. The one thing
+worth asking is whether anything answers for the scheme, so `xdg-mime` answers
+it — nothing registered means no Obsidian, and the path goes to whatever handles
+markdown (`omawrite` on Omarchy). The path is `quote`d because vault paths carry
+spaces (`05. Journals/`) and a raw space truncates the URI where Obsidian reads
+it. `ensure_note` runs first: a URI pointing at a file that is not there yet
+lands on an error dialog, not a note.
+
 Date parsing is delegated to GNU `date -d`. It handles "tomorrow", "friday",
 "+3 days"; it does not do recurrence, which is the line where Tasks-plugin `🔁`
 syntax would have to be adopted.

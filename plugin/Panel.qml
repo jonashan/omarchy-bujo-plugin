@@ -410,6 +410,13 @@ Panel {
     Util.execArgv(argv)
   }
 
+  // Obsidian is another window: the layer-shell panel loses focus and closes
+  // the moment it comes up, so close first rather than be closed mid-launch.
+  function openDay() {
+    root.close()
+    Util.execArgv([root.exe, "open", iso(root.viewDay)])
+  }
+
   function label(row) {
     return row.clean && row.clean.length > 0 ? row.clean : row.text
   }
@@ -490,6 +497,7 @@ Panel {
           return
         }
         if (t === "e") root.beginEdit()
+        else if (t === "o") root.openDay()
         else if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
         else if (t === "a") root.actInteractive("add-interactive")
@@ -909,7 +917,8 @@ Panel {
                     { key: "x/⏎", what: "done" },
                     { key: "d", what: "drop" },
                     { key: "m", what: "migrate" },
-                    { key: "e", what: "edit" }
+                    { key: "e", what: "edit" },
+                    { key: "o", what: "obsidian" }
                   ]
                 : [
                     { key: "j/k", what: "move" },
@@ -921,6 +930,7 @@ Panel {
                     { key: "e", what: "edit" },
                     { key: "a", what: "add" },
                     { key: "n", what: "note" },
+                    { key: "o", what: "obsidian" },
                     { key: "s", what: "settings" }
                   ])
 

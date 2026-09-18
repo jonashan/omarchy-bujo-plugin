@@ -17,6 +17,7 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 try:
     import tomllib
@@ -884,6 +885,24 @@ def cmd_path(cfg, args):
     print(note_path(cfg, parse_when(args.when)))
 
 
+def open_target(path, obsidian):
+    """Obsidian's own URI, when something answers for the scheme — `open?path=`
+    opens the note *inside the vault*, with its links and its daily-note
+    plumbing, where handing the file over would open a loose copy. Nothing
+    registered means no Obsidian, so the path goes to whatever handles
+    markdown. Quoting is not decoration: a vault path is "05. Journals/…" more
+    often than not, and a raw space truncates the URI at the space."""
+    return "obsidian://open?path=" + quote(str(path), safe="") if obsidian else str(path)
+
+
+def cmd_open(cfg, args):
+    path = ensure_note(cfg, parse_when(args.when))
+    target = open_target(path, run_or_none(["xdg-mime", "query", "default",
+                                            "x-scheme-handler/obsidian"]))
+    subprocess.Popen(["xdg-open", target], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # The settings page is a client of these three and nothing else. QML never
 # opens config.toml — it reads `config get`, asks `config check` whether a
 # draft holds up, and hands a change to `config set`.
@@ -1051,6 +1070,10 @@ def main(argv=None):
     pa = sub.add_parser("path", help="print the note path for a day")
     pa.add_argument("when", nargs="?", default="")
     pa.set_defaults(fn=cmd_path)
+
+    op = sub.add_parser("open", help="open a day's note in Obsidian")
+    op.add_argument("when", nargs="?", default="")
+    op.set_defaults(fn=cmd_open)
 
     # raw_config: these three have to work when the vault is missing, since
     # fixing that is what the settings page is for.
