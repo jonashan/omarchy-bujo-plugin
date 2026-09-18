@@ -104,9 +104,20 @@ Panel.qml runs it as a `Process` and calls `open()` in `onExited`, and
 **The panel has one cursor and two axes.** `PanelKeyCatcher` delivers both:
 `dy` walks the rows, `dx` walks the days (`h`/`l` and the arrows were arriving
 and being discarded before the day view existed). A past day is one plain list
--- `actionable` switches to `dayTodos` and the TODAY/DANGLING split disappears,
+-- `todoRows` switches to `dayTodos` and the TODAY/DANGLING split disappears,
 because "dangling" is a relationship to today. `taskRow`'s `globalIndex` has to
 know which of the two shapes it is in, or the cursor lands on the wrong row.
+`actionable` is `todoRows` plus `dayNotes`, in that order, because that is the
+order they are drawn in — the log delegate's `globalIndex` counts from
+`todoRows.length`, and the two orders have to stay the same one.
+
+**The edit field lives below the lists, not inside a row.** Every list in the
+panel is a JS array reassigned by the one-second refresh, so its Repeater
+rebuilds every delegate — a `TextField` in a row would be destroyed mid-word.
+The row keeps its cursor highlight while the field is open, which is the better
+read anyway. `PanelKeyCatcher.blocked` has to include `editRow !== null` or the
+field never receives a letter, and focus is taken in `Qt.callLater` because the
+field is only just visible and an invisible item takes no focus.
 
 **The calendar buys a month in one call.** `bujo days YYYY-MM --json` walks the
 tree once and returns per-day counts; `list --day` per cell would be thirty
@@ -115,9 +126,22 @@ todos together, and it reports days that have only a note — the grid has to
 know those exist. Colour is the point of that grid rather than the dates: an
 open todo on a past day is `urgent`, today's is `accent`.
 
-**Notes are read, never acted on.** `notes_in` returns no `ref` on purpose — a
-ref exists so a write can be verified, and there is no write here. Anything
-that wants to change a log line goes through Obsidian, or earns a ref first.
+**Notes are records, not decisions — but they are editable.** `notes_in` earned
+its `ref` when `edit` arrived: a ref exists so a write can be verified, and
+there is now a write that reaches a log line. It still returns no status, and
+`act()` refuses `done` / `drop` / `move` on a row without one. Do not give a
+note a status to make some verb fit; that is the difference between the two
+sections, and the file is where it is recorded.
+
+**`edit` decides todo-or-note by section, never by the shape of the line.** A
+checkbox hand-typed into `## Log` matches `TASK_RE` perfectly, and reading it
+as a task would write a second box in front of the one the panel had already
+shown. The section contract answers this question everywhere else; it answers
+it here too. `edit` keeps the status box, the ✅ stamp and the `→` link — they
+are what a line records about itself, not what it says — and it deliberately
+does *not* go through `clear_copy_at_target`: editing a `[>]` line breaks the
+text tying it to its copy, and "a copy that no longer matches is somebody's
+work, left alone" is already `remove_open_copy`'s rule.
 
 Date parsing is delegated to GNU `date -d`. It handles "tomorrow", "friday",
 "+3 days"; it does not do recurrence, which is the line where Tasks-plugin `🔁`

@@ -296,11 +296,91 @@ def test_the_log_reads_back_as_notes():
         assert [n["text"] for n in notes] == ["shipped the invoice", "accountant wants Q3 numbers"]
         # the todo stays out of the log, the same way the log stays out of the list
         assert not any("a real todo" in n["text"] for n in notes)
-        # notes carry no ref: there is nothing about one to decide
-        assert all("ref" not in n for n in notes)
+        # notes carry a ref now that `edit` writes here — a write is verified
+        # against the line it found, or it is not a write we make
+        assert all(n["ref"] for n in notes)
 
         # a day with no note at all reads as no notes, not as a crash
         assert b.notes_in(c, b.note_path(c, date.today() + timedelta(days=5)), date.today()) == []
+
+
+def test_edit_rewrites_the_words_and_nothing_else():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+
+        b.cmd_add(c, Args(text="call the accountent", when=""))
+        b.cmd_add(c, Args(text="ship the invoce", when=""))
+        b.cmd_add(c, Args(text="rewrite onbording copy", when=""))
+        b.cmd_note(c, Args(text="accountant wants Q3 numbres"))
+
+        rows = b.today_tasks(c, today)
+        b.cmd_done(c, Args(ref=rows[1]["ref"]))
+        b.cmd_move(c, Args(ref=rows[2]["ref"], when=tomorrow.isoformat()))
+
+        rows = b.today_tasks(c, today)
+        for row, fixed in zip(rows, ["call the accountant", "ship the invoice",
+                                     "rewrite onboarding copy"]):
+            b.cmd_edit(c, Args(ref=row["ref"], text=fixed))
+
+        rows = b.today_tasks(c, today)
+        assert [r["clean"] for r in rows] == ["call the accountant", "ship the invoice",
+                                              "rewrite onboarding copy"], rows
+        # the status box survives, and so does what the line records about
+        # itself: the done stamp and the migration link
+        assert [r["status"] for r in rows] == [b.OPEN, b.DONE, b.MIGRATED]
+        assert rows[1]["text"] == "ship the invoice ✅ %s" % today.isoformat()
+        assert rows[2]["text"] == "rewrite onboarding copy → [[%s]]" % tomorrow.isoformat()
+
+        # and a note edits the same way, by the same ref contract
+        note = b.notes_in(c, b.note_path(c, today), today)[0]
+        b.cmd_edit(c, Args(ref=note["ref"], text="accountant wants Q3 numbers"))
+        assert [n["text"] for n in b.notes_in(c, b.note_path(c, today), today)] \
+            == ["accountant wants Q3 numbers"]
+
+
+def test_editing_a_log_checkbox_leaves_it_a_checkbox():
+    """A checkbox under ## Log is still a checkbox — the log is not ours to
+    tidy, and an edit is a rewrite of the words, not of the shape."""
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        today = date.today()
+        b.cmd_note(c, Args(text="a real note"))
+        path = b.note_path(c, today)
+        # hand-typed, the way Obsidian would leave it
+        lines = b.read_lines(path)
+        first, last = b.section_bounds(lines, "## Log")
+        lines.insert(last, "  - [ ] a checkbox typed into the log by hand")
+        b.write_lines(path, lines)
+
+        # the panel shows a note's bullet verbatim, so editing it verbatim is
+        # what puts the line back the way it was
+        box = b.notes_in(c, path, today)[1]
+        assert box["text"] == "[ ] a checkbox typed into the log by hand"
+        b.cmd_edit(c, Args(ref=box["ref"], text="[ ] typed into the log by hand"))
+
+        lines = b.read_lines(path)
+        first, last = b.section_bounds(lines, "## Log")
+        assert [l for l in lines[first:last] if l.strip()] == [
+            "- a real note", "  - [ ] typed into the log by hand"]
+        # and it still never reaches the list
+        assert b.today_tasks(c, today) == []
+
+
+def test_edit_refuses_a_stale_ref():
+    with tempfile.TemporaryDirectory() as root:
+        c = cfg_for(root)
+        b.cmd_add(c, Args(text="one", when=""))
+        ref = b.today_tasks(c)[0]["ref"]
+        p = b.note_path(c, date.today())
+        p.write_text(p.read_text().replace("- [ ] one", "- [ ] one, edited"), encoding="utf-8")
+        try:
+            b.cmd_edit(c, Args(ref=ref, text="two"))
+        except SystemExit as e:
+            assert "changed under us" in str(e)
+        else:
+            assert False, "edit must verify like every other write"
 
 
 def test_a_month_is_counted_in_one_walk():

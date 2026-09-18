@@ -76,7 +76,7 @@ MOVED_TO_RE = re.compile(r"\s*→\s*\[\[[^\]]+\]\]\s*$")
 MOVED_TARGET_RE = re.compile(r"→\s*\[\[(\d{4}-\d{2}-\d{2})\]\]")
 # Any bullet in the log section is a note, checkbox-shaped ones included — it
 # is what the file says, and the log is not ours to tidy.
-NOTE_RE = re.compile(r"^\s*- (?P<text>.*)$")
+NOTE_RE = re.compile(r"^(?P<indent>\s*)- (?P<text>.*)$")
 
 MONTHS = ["January", "February", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
@@ -474,8 +474,9 @@ def tasks_in(cfg, path, day):
 
 
 def notes_in(cfg, path, day):
-    """The log section's bullets. No status and no ref: a note is a record,
-    and there is nothing about one to decide."""
+    """The log section's bullets. No status — a note records what happened and
+    there is nothing about one to decide — but a ref, because `edit` writes
+    here and a write has to be verified against the line it thinks it found."""
     lines = read_lines(path)
     bounds = section_bounds(lines, cfg["log_section"])
     if bounds is None:
@@ -484,7 +485,8 @@ def notes_in(cfg, path, day):
     for i in range(bounds[0], bounds[1]):
         m = NOTE_RE.match(lines[i])
         if m and m.group("text").strip():
-            out.append({"day": day.isoformat(), "text": m.group("text").strip()})
+            out.append({"day": day.isoformat(), "text": m.group("text").strip(),
+                        "ref": ref_for(cfg, path, i, lines[i])})
     return out
 
 
@@ -756,6 +758,46 @@ def cmd_note_interactive(cfg, args):
     run_or_none(["omarchy-notification-send", "Noted", text.strip()])
 
 
+def cmd_edit(cfg, args):
+    """Rewrite one line's words, and only its words.
+
+    One verb for a todo and a note alike, and the section says which is which.
+    The status box, the ✅ stamp and the → migration link are what a line
+    records about itself rather than what it says, and they survive the
+    rewrite untouched — as does whatever a note's bullet happens to hold, so
+    what the panel showed is what comes back.
+
+    Editing a migrated task does break the text tying it to the copy at its
+    target — which is already the answer the migration verbs give: a copy that
+    no longer matches is somebody's work, and is left alone rather than
+    thrown away.
+    """
+    text = args.text.strip()
+    if not text:
+        sys.exit("bujo: edit needs some text")
+    path, lines, i = resolve_ref(cfg, args.ref)
+    # Which section the line sits in is what it is — the same contract every
+    # reader here works by. Reading the line's own shape instead would take a
+    # checkbox hand-typed into the log for a task, and write the box back in
+    # front of the text the panel had already shown the box in.
+    log = section_bounds(lines, cfg["log_section"])
+    if log and log[0] <= i < log[1]:
+        m = NOTE_RE.match(lines[i])
+        if not m:
+            sys.exit("bujo: not a note")
+        lines[i] = "%s- %s" % (m.group("indent"), text)
+    else:
+        m = TASK_RE.match(lines[i])
+        if not m:
+            sys.exit("bujo: not a task")
+        kept = DONE_STAMP_RE.search(m.group("text")) or MOVED_TO_RE.search(m.group("text"))
+        lines[i] = "%s- [%s] %s%s" % (m.group("indent"), m.group("status"), text,
+                                      " " + kept.group(0).strip() if kept else "")
+    write_lines(path, lines)
+    notify_shell()
+    print(lines[i].strip())
+
+
 def cmd_move_interactive(cfg, args):
     """Reuse the capture prompt rather than build a picker inside the panel.
     ponytail: free-text prompt; fixed rows (tomorrow/next week/pick) if the
@@ -984,6 +1026,11 @@ def main(argv=None):
     n.set_defaults(fn=cmd_note)
 
     sub.add_parser("note-interactive", help="prompt for a note").set_defaults(fn=cmd_note_interactive)
+
+    e = sub.add_parser("edit", help="rewrite a todo or a note in place")
+    e.add_argument("ref")
+    e.add_argument("text")
+    e.set_defaults(fn=cmd_edit)
 
     mvi = sub.add_parser("move-interactive", help="prompt for a day, then migrate")
     mvi.add_argument("ref")

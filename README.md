@@ -85,6 +85,7 @@ bujo list --dangling --json
 bujo done <ref>                          # [x] + ✅ today
 bujo drop <ref>                          # [-]
 bujo move <ref> tomorrow                 # [>] here, a fresh [ ] there
+bujo edit <ref> "call the accountant"    # rewrite the words; a note the same way
 bujo log --day yesterday                 # read a day's log back; `note` writes one
 bujo days 2026-09 --json                 # per-day counts for a month, one walk
 bujo bar                                 # waybar-style JSON for the bar
@@ -112,9 +113,16 @@ because a task you have finished is not still owed on Thursday. A copy that has
 already been completed or edited there is somebody's work: it is left alone,
 and you are told.
 
+`edit` rewrites a line's words and only its words. The status box, the ✅
+stamp and the `→` migration link are what a line records about itself rather
+than what it says, and they survive. Which section the line sits in is what
+decides whether it is a todo or a note, so a checkbox hand-typed into `## Log`
+stays the bullet the log shows it as.
+
 A `ref` is `path:line:hash`. The hash is checked before every write, so a task
 that Obsidian edited under a live panel is refused rather than acted on at the
-wrong line.
+wrong line. Notes carry a ref for the same reason, now that there is a write
+that can reach one.
 
 ## Omarchy
 
@@ -129,12 +137,20 @@ The bar widget shows today's open count, and the dangling count after it in
 the `urgent` role — the one colour bujo introduces, and only when there is
 something to decide about. Left click opens the panel, right click captures.
 
-In the panel: `j/k` move, `x` or `Enter` done, `d` drop, `m` migrate, `a` add,
-`n` note, `s` settings, `Esc` closes. It reads on open and polls once a second while
-visible, so a box ticked in Obsidian shows up here.
+In the panel: `j/k` move, `x` or `Enter` done, `d` drop, `m` migrate, `e` edit,
+`a` add, `n` note, `s` settings, `Esc` closes. It reads on open and polls once a
+second while visible, so a box ticked in Obsidian shows up here.
 
 Today's list shows the day's log under it — record rather than decision, so
 those rows carry no status mark, and the empty mark column is what says so.
+The cursor walks into them all the same, because `e` is how anything is edited
+and a note is a thing you can mistype. The deciding verbs stay refused there.
+
+`e` opens a field under the list rather than turning the row into one: every
+list here is rebuilt on the one-second refresh, which would throw a half-typed
+row away mid-word, and the row keeps its highlight up there so what you are
+changing stays beside what you are changing it to. `Enter` saves, `Esc` throws
+the edit away.
 
 **Previous days.** `h` and `l` (or `←`/`→`) step the date; the header becomes
 the day you are on and the TODAY/DANGLING split collapses into one list,
@@ -213,15 +229,22 @@ statically.
 - **P4 · settings** — done. A page in the panel over `bujo config`.
 - **P5 · previous days** — done. `h`/`l` steps the day, `c` opens a month, and
   both views show the log beside the todos.
+- **P6 · editing** — done. `e` on any row, todo or note, through the same
+  verified-ref write as every other verb.
 
 Known ceiling: if `omarchy-file-select` is missing — an Omarchy older than this
 plugin supports — the folder button does nothing rather than saying so;
 surfacing a failed helper needs an error line the panel does not have yet. Type
 the path instead.
 
-Notes are capture-only: they carry no status and need no decision. The panel
-shows them; it does not let you act on one, because there is nothing about a
-note to act on. Editing is Obsidian's job.
+Notes still carry no status and need no decision — `x`, `d` and `m` are
+refused on one. What they gained is `e`: fixing a typo in what you wrote is not
+a decision about it, and going to Obsidian for that was the tax.
+
+Editing a migrated task breaks the text tying it to the copy at its target, so
+undoing that move afterwards leaves the copy alone rather than taking it back.
+That is the same rule migrations already followed — a copy that no longer
+matches is somebody's work — and you are told when it applies.
 
 Navigation stops at today. Migrating a task forward puts it on a day you
 cannot step to — the calendar still shows its dot, and the task comes to you

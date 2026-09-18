@@ -26,7 +26,12 @@ Panel {
   readonly property var lateRows: rows.filter(function (r) { return r.age > 0 })
   // One plain list on a past day: every verb still acts on the cursor row, so
   // the cursor model does not change shape just because the date did.
-  readonly property var actionable: dayMode ? dayTodos : todayRows.concat(lateRows)
+  readonly property var todoRows: dayMode ? dayTodos : todayRows.concat(lateRows)
+  // The log rides along at the end, in the order it is drawn, because a note
+  // is editable now and the cursor is how anything gets edited. It is still
+  // not decidable: `act` refuses the verbs that need a status box.
+  readonly property var actionable: todoRows.concat(dayNotes)
+  readonly property bool onTodo: current !== null && current.status !== undefined
   readonly property int openToday: todayRows.filter(function (r) { return r.status === " " }).length
 
   property int cursor: 0
@@ -73,6 +78,7 @@ Panel {
     cursor = 0
     dayOffset = 0
     calendarOpen = false
+    editRow = null
     if (hostWidget) hostWidget.refresh()
     reloadView()
   }
@@ -90,8 +96,6 @@ Panel {
   property var dayTodos: []
   property var dayNotes: []
   property var monthDays: []
-
-  readonly property var todayRowsWithLog: rows   // named for the reader's sake
 
   function reloadView() {
     if (!opened || settingsOpen) return
@@ -344,12 +348,51 @@ Panel {
     id: action
     running: false
     command: []
-    onExited: if (root.hostWidget) root.hostWidget.refresh()
+    onExited: {
+      if (root.hostWidget) root.hostWidget.refresh()
+      root.reloadView()   // the day's todos and its log are this panel's own
+    }
   }
 
   function act(verb) {
-    if (!current || action.running) return
+    if (!onTodo || action.running) return
     action.command = [root.exe, verb, current.ref]
+    action.running = true
+  }
+
+  // ---- editing one line, in a field of its own rather than in the row.
+  //      Every list here is rebuilt on the one-second refresh, which would
+  //      throw a half-typed delegate away mid-word; and a field below the
+  //      lists leaves the row up there highlighted, so what you are changing
+  //      stays on screen beside what you are changing it to.
+  //
+  //      The ref does the rest: the CLI re-hashes the line before it writes,
+  //      so a list that shifted under the field is refused, not mis-edited.
+
+  property var editRow: null
+
+  function beginEdit() {
+    if (!current || settingsOpen || calendarOpen) return
+    editRow = current
+    editField.text = label(current)
+    // callLater: the field is only just visible, and an invisible item takes
+    // no focus — a silently dead `e` is an afternoon in a shell that does not
+    // hot-reload.
+    Qt.callLater(function () {
+      editField.forceActiveFocus()
+      editField.cursorPosition = editField.text.length
+    })
+  }
+
+  function endEdit(commit) {
+    var row = root.editRow
+    var text = editField.text.trim()
+    editRow = null
+    keyCatcher.forceActiveFocus()
+    if (!commit || !row || action.running) return
+    // Nothing to write when it came back empty or came back the same.
+    if (text === "" || text === label(row)) return
+    action.command = [root.exe, "edit", row.ref, text]
     action.running = true
   }
 
@@ -361,7 +404,7 @@ Panel {
   // gets two arguments it cannot use.
   function actInteractive(verb) {
     var refless = verb === "add-interactive" || verb === "note-interactive"
-    if (!refless && !current) return
+    if (!refless && !onTodo) return
     var argv = refless ? [root.exe, verb] : [root.exe, verb, current.ref]
     root.close()
     Util.execArgv(argv)
@@ -397,7 +440,7 @@ Panel {
       // This catcher sees keys before the focused child does, so a settings
       // field would otherwise never receive a letter — every one of them is
       // already a verb down in the list.
-      blocked: root.settingsOpen && settingsView.editing
+      blocked: (root.settingsOpen && settingsView.editing) || root.editRow !== null
 
       // Two axes, and the kit already delivers both: dy walks the list, dx
       // walks the days. dx was being thrown away until now.
@@ -446,7 +489,8 @@ Panel {
           else if (t === "]") root.stepMonth(1)
           return
         }
-        if (t === "d") root.act("drop")
+        if (t === "e") root.beginEdit()
+        else if (t === "d") root.act("drop")
         else if (t === "m") root.actInteractive("move-interactive")
         else if (t === "a") root.actInteractive("add-interactive")
         else if (t === "n") root.actInteractive("note-interactive")
@@ -706,10 +750,22 @@ Panel {
             model: root.dayNotes
 
             Item {
+              id: noteItem
               required property var modelData
+              required property int index
+
+              // The log is drawn under every todo and sits under them in the
+              // cursor too, so the two orders are the same one.
+              readonly property int globalIndex: root.todoRows.length + index
+              readonly property bool hasCursor: root.opened && globalIndex === root.cursor
 
               width: parent ? parent.width : 0
               height: noteText.implicitHeight + Style.space(8)
+
+              Rectangle {
+                anchors.fill: parent
+                color: noteItem.hasCursor ? root.selBackground : "transparent"
+              }
 
               Row {
                 anchors.left: parent.left
@@ -717,12 +773,14 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(9)
 
+                // Still no status mark: a note has nothing to decide, and the
+                // empty mark column is what says so.
                 Text {
                   anchors.verticalCenter: parent.verticalCenter
                   width: Math.round(Style.font.body * 1.15)
                   horizontalAlignment: Text.AlignHCenter
                   text: "·"
-                  color: root.dim
+                  color: noteItem.hasCursor ? Color.accent : root.dim
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
                 }
@@ -732,11 +790,16 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   width: parent.width - parent.spacing - Math.round(Style.font.body * 1.15)
                   elide: Text.ElideRight
-                  text: modelData.text
-                  color: root.fg
+                  text: noteItem.modelData.text
+                  color: noteItem.hasCursor ? Color.accent : root.fg
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
                 }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: root.cursor = noteItem.globalIndex
               }
             }
           }
@@ -765,12 +828,44 @@ Panel {
 
         Text {
           width: parent.width
-          visible: root.actionable.length === 0 && root.dayNotes.length === 0
-            && !root.settingsOpen && !root.calendarOpen
+          visible: root.actionable.length === 0 && !root.settingsOpen && !root.calendarOpen
           text: root.dayMode ? "Nothing on this day." : "Nothing dangling."
           color: root.dim
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
+        }
+
+        // ---- the edit field. One field for both kinds of row, below the
+        //      lists rather than inside one: see beginEdit.
+
+        Column {
+          width: parent.width
+          visible: root.editRow !== null
+          spacing: Style.space(3)
+
+          Text {
+            // The row being edited, not the one under the cursor: a rescan
+            // can move the cursor off it while the field is still open.
+            text: root.editRow && root.editRow.status !== undefined ? "EDIT TODO" : "EDIT NOTE"
+            color: root.sectionColor
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+
+          TextField {
+            id: editField
+            width: parent.width
+            foreground: root.fg
+            font.pixelSize: Style.font.bodySmall
+
+            onAccepted: root.endEdit(true)
+            Keys.onEscapePressed: root.endEdit(false)
+            // Leaving the field any other way — Tab, a click on the list —
+            // cancels. Without this the field keeps `blocked` true with
+            // nothing focused to receive the keys, and the panel goes deaf.
+            onActiveFocusChanged: if (!activeFocus && root.editRow !== null) root.endEdit(false)
+          }
         }
 
         PanelSeparator { width: parent.width }
@@ -813,7 +908,8 @@ Panel {
                     { key: "j/k", what: "move" },
                     { key: "x/⏎", what: "done" },
                     { key: "d", what: "drop" },
-                    { key: "m", what: "migrate" }
+                    { key: "m", what: "migrate" },
+                    { key: "e", what: "edit" }
                   ]
                 : [
                     { key: "j/k", what: "move" },
@@ -822,6 +918,7 @@ Panel {
                     { key: "m", what: "migrate" },
                     { key: "x/⏎", what: "done" },
                     { key: "d", what: "drop" },
+                    { key: "e", what: "edit" },
                     { key: "a", what: "add" },
                     { key: "n", what: "note" },
                     { key: "s", what: "settings" }
